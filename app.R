@@ -16,8 +16,8 @@ library(officer) # Untuk Word document
 library(flextable) # Untuk tabel dalam Word
 library(scales) # Untuk rescaling coordinates
 library(tinytex)
+library(grid)
 
-# --- CSS Kustom dengan Tema Pink & Hijau Modern ---
 custom_css <- "
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
   
@@ -457,7 +457,7 @@ ui <- dashboardPage(
                           tags$style(HTML(custom_css)) # Memanggil CSS di sini
                   )),
   dashboardSidebar(
-    width = 280, # Menyesuaikan lebar sidebar untuk mencegah pemotongan
+    width = 280, 
     sidebarMenu(
       menuItem("Beranda", tabName = "beranda", icon = icon("home")),
       menuItem("Metadata Data", tabName = "metadata", icon = icon("info-circle")), # New: Metadata Tab
@@ -492,21 +492,7 @@ ui <- dashboardPage(
                         div(style = "background: linear-gradient(135deg, #D1FAE5 0%, #FCE7F3 100%); padding: 15px; border-radius: 12px; margin-bottom: 10px;",
                             strong("📊 SoVI Data"), br(),
                             span("Data Social Vulnerability Index dengan 17 variabel sosio-ekonomi dari SUSENAS dan proyeksi penduduk BPS.", style = "color: #6B7280; font-size: 14px;")
-                        ),
-                        div(style = "background: linear-gradient(135deg, #D1FAE5 0%, #FCE7F3 100%); padding: 15px; border-radius: 12px;",
-                            strong("📏 Distance Data"), br(),
-                            span("Matriks jarak antar 511 kabupaten/kota di Indonesia untuk mendukung analisis spasial.", style = "color: #6B7280; font-size: 14px;")
-                        ),
-                        
-                        # --- Tambahkan bagian ini untuk pilihan dataset ---
-                        tags$hr(), # Garis pemisah
-                        h4("Pilih Dataset Aktif:", style = "color: #065F46; margin-bottom: 15px;"),
-                        selectInput("default_dataset", "Pilih Dataset:",
-                                    choices = c("SoVI Data" = "sovi",
-                                                "Distance Data" = "distance"),
-                                    selected = "sovi"), # Default terpilih SoVI
-                        actionButton("load_default_data", "Muat Dataset Terpilih", class = "btn-primary")
-                        # --- Akhir bagian tambahan ---
+                        )
                     )
                 ),
                 box(title = "📊 Fitur Utama", status = "primary", solidHeader = TRUE, width = 6,
@@ -787,46 +773,8 @@ ui <- dashboardPage(
 server <- function(input, output, session) {
   
   # --- Data Reaktif ---
-  data_r <- reactiveVal(NULL) # Untuk menyimpan data yang aktif (awal atau upload)
-  
-  # Load distance data globally
-  distance_data <- reactive({
-    tryCatch({
-      dist_df <- read.csv("distance.csv", row.names = 1)
-      return(dist_df)
-    }, error = function(e) {
-      showNotification(paste("Error loading distance data:", e$message), type = "error")
-      return(NULL)
-    })
-  })
-  
-  # Function to convert distance matrix to coordinates using MDS
-  distance_to_coordinates <- function(dist_matrix, dimensions = 2) {
-    # Ensure the matrix is symmetric and has no negative values
-    dist_matrix[is.na(dist_matrix)] <- 0
-    
-    # Convert to distance object
-    if (!inherits(dist_matrix, "dist")) {
-      dist_matrix <- as.dist(dist_matrix)
-    }
-    
-    # Apply classical multidimensional scaling
-    mds_result <- cmdscale(dist_matrix, k = dimensions, eig = TRUE)
-    
-    # Extract coordinates
-    coordinates <- as.data.frame(mds_result$points)
-    colnames(coordinates) <- c("longitude", "latitude")
-    
-    # Add district codes as row names
-    coordinates$district_id <- as.numeric(rownames(coordinates))
-    
-    # Scale coordinates to a reasonable geographic range
-    # Normalize to approximately fit Indonesian archipelago bounds
-    coordinates$longitude <- scales::rescale(coordinates$longitude, to = c(95, 141))
-    coordinates$latitude <- scales::rescale(coordinates$latitude, to = c(-11, 6))
-    
-    return(coordinates)
-  }
+  data_r <- reactiveVal(NULL) 
+
 
   # Memuat data default saat aplikasi dimulai
   observeEvent(TRUE, {
@@ -837,9 +785,9 @@ server <- function(input, output, session) {
       showNotification("Data 'sovi_data.csv' dimuat sebagai default.", type = "message")
     }, error = function(e) {
       showNotification(paste("Error loading default data (sovi_data.csv):", e$message), type = "error")
-      data_r(NULL) # Reset data jika ada error
+      data_r(NULL)
     })
-  }, once = TRUE) # Hanya dijalankan sekali saat inisialisasi
+  }, once = TRUE) 
   
   # Observer untuk memuat dataset default yang dipilih
   observeEvent(input$load_default_data, {
@@ -860,31 +808,23 @@ server <- function(input, output, session) {
     })
   })
   
-  # Observer untuk mengunggah data baru
-  observeEvent(input$upload_file, {
-    req(input$upload_file)
-    tryCatch({
-      df <- read.csv(input$upload_file$datapath, header = input$header)
-      data_r(df)
-      showNotification("Data berhasil diunggah!", type = "success")
-    }, error = function(e) {
-      showNotification(paste("Error membaca file:", e$message), type = "error")
-      data_r(NULL) # Reset data jika ada error
-    })
-  })
-  
-  # --- UI Dinamis untuk Pemilihan Variabel ---
-  # Ini akan diperbarui setiap kali data_r() berubah (data diunggah atau dimanipulasi)
   observe({
-    req(data_r()) # Pastikan ada data sebelum membuat UI dinamis
-    df <- data_r()
+    req(current_data())
+    df <- current_data() 
     cols <- names(df)
     numeric_cols <- cols[sapply(df, is.numeric)]
-    non_numeric_cols <- cols[!sapply(df, is.numeric)] # Corrected: Use is.numeric directly to filter non-numeric
     
+    factor_like_cols <- names(df)[sapply(df, function(x) {
+      is.factor(x) || is.character(x) || 
+        (is.numeric(x) && length(unique(x[!is.na(x)])) <= 10)
+    })]
+
+    cat_vars_from_management <- names(df)[grepl("_cat$", names(df))]
+    factor_like_cols <- unique(c(factor_like_cols, cat_vars_from_management))
+
     # Manajemen Data
     output$var_categorize_ui <- renderUI({
-      tagList( # Tambahkan tagList untuk menggabungkan beberapa UI element
+      tagList( 
         selectInput("cat_var_name", "Pilih Variabel Kontinu untuk Dikategorikan:", choices = numeric_cols),
         numericInput("cat_num_bins", "Jumlah Kategori (Bins):", value = 3, min = 2)
       )
@@ -907,8 +847,6 @@ server <- function(input, output, session) {
       } else if (plot_type == "Bar Plot") {
         selectInput("plot_var_x", "Pilih Variabel (Kategorik/Diskret):", choices = cols)
       } else if (plot_type == "Peta") {
-        # Assuming data has 'latitude' and 'longitude' columns
-        # If not, user needs to upload spatial data or specify columns
         tagList(
           p("Untuk visualisasi peta, pastikan data Anda memiliki kolom 'latitude' dan 'longitude'."),
           selectInput("map_var_lat", "Kolom Latitude:", choices = numeric_cols),
@@ -916,7 +854,6 @@ server <- function(input, output, session) {
           selectInput("map_var_color", "Variabel Warna (Opsional):", choices = c("None", cols), selected = "None")
         )
       } else if (plot_type == "Peta Jarak") {
-        # Distance matrix visualization using MDS
         tagList(
           p("Visualisasi matriks jarak menggunakan Multidimensional Scaling (MDS) untuk mengkonversi data jarak menjadi koordinat geografis."),
           p("Data jarak akan dikonversi menjadi koordinat 2D dan ditampilkan sebagai peta interaktif."),
@@ -934,29 +871,13 @@ server <- function(input, output, session) {
       selectInput("norm_var", "Pilih Variabel untuk Uji Normalitas:", choices = numeric_cols)
     })
     output$var_homogenitas_ui <- renderUI({
-      req(current_data())
-      df <- current_data()
-      
-      # Dapatkan variabel numerik untuk respon
-      numeric_vars <- names(df)[sapply(df, is.numeric)]
-      
-      # Dapatkan variabel yang bisa dijadikan faktor untuk grup (termasuk variabel kategorik hasil kategorisasi)
-      factor_vars <- names(df)[sapply(df, function(x) {
-        is.factor(x) || is.character(x) || 
-          (is.numeric(x) && length(unique(x[!is.na(x)])) <= 10) # Numerik dengan sedikit unique values
-      })]
-      
-      # Tambahkan variabel kategorik yang dibuat dari kategorisasi (yang berakhiran "_cat")
-      cat_vars <- names(df)[grepl("_cat$", names(df))]
-      factor_vars <- unique(c(factor_vars, cat_vars))
-      
       tagList(
         selectInput("homo_var_response", "Variabel Respon (Numerik):", 
-                    choices = setNames(numeric_vars, numeric_vars),
-                    selected = if(length(numeric_vars) > 0) numeric_vars[1] else NULL),
+                    choices = numeric_cols,
+                    selected = if(length(numeric_cols) > 0) numeric_cols[1] else NULL),
         selectInput("homo_var_group", "Variabel Grup (Kategorik):", 
-                    choices = setNames(factor_vars, factor_vars),
-                    selected = if(length(factor_vars) > 0) factor_vars[1] else NULL)
+                    choices = factor_like_cols,
+                    selected = if(length(factor_like_cols) > 0) factor_like_cols[1] else NULL)
       )
     })
     
@@ -965,32 +886,16 @@ server <- function(input, output, session) {
       selectInput("t_test_1_var", "Pilih Variabel Numerik:", choices = numeric_cols)
     })
     output$var_t_test_2_ui <- renderUI({
-      req(current_data())
-      df <- current_data()
-      
-      # Dapatkan variabel numerik untuk respon
-      numeric_vars <- names(df)[sapply(df, is.numeric)]
-      
-      # Dapatkan variabel yang bisa dijadikan faktor untuk grup (termasuk variabel kategorik hasil kategorisasi)
-      factor_vars <- names(df)[sapply(df, function(x) {
-        is.factor(x) || is.character(x) || 
-          (is.numeric(x) && length(unique(x[!is.na(x)])) <= 10) # Numerik dengan sedikit unique values
-      })]
-      
-      # Tambahkan variabel kategorik yang dibuat dari kategorisasi (yang berakhiran "_cat")
-      cat_vars <- names(df)[grepl("_cat$", names(df))]
-      factor_vars <- unique(c(factor_vars, cat_vars))
-      
       if (input$t_test_2_type == "Independen") {
         tagList(
           selectInput("t_test_2_var_response", "Variabel Respon (Numerik):", 
-                      choices = setNames(numeric_vars, numeric_vars),
-                      selected = if(length(numeric_vars) > 0) numeric_vars[1] else NULL),
+                      choices = numeric_cols,
+                      selected = if(length(numeric_cols) > 0) numeric_cols[1] else NULL),
           selectInput("t_test_2_var_group", "Variabel Grup (Kategorik):", 
-                      choices = setNames(factor_vars, factor_vars),
-                      selected = if(length(factor_vars) > 0) factor_vars[1] else NULL)
+                      choices = factor_like_cols,
+                      selected = if(length(factor_like_cols) > 0) factor_like_cols[1] else NULL)
         )
-      } else { # Berpasangan
+      } else { 
         tagList(
           selectInput("t_test_2_var1", "Variabel 1 (Numerik):", choices = numeric_cols),
           selectInput("t_test_2_var2", "Variabel 2 (Numerik):", choices = numeric_cols)
@@ -1000,119 +905,54 @@ server <- function(input, output, session) {
     
     # Uji Proporsi & Varians
     output$var_prop_test_1_ui <- renderUI({
-      # Pilihan untuk proporsi bisa numerik (0/1) atau kategorik
-      selectInput("prop_test_1_var", "Pilih Variabel (Biner/Kategorik):", choices = cols)
+      selectInput("prop_test_1_var", "Pilih Variabel (Biner/Kategorik):", choices = factor_like_cols)
     })
     output$var_prop_test_2_ui <- renderUI({
-      req(current_data())
-      df <- current_data()
-      
-      # Dapatkan variabel numerik untuk respon
-      numeric_vars <- names(df)[sapply(df, is.numeric)]
-      
-      # Dapatkan variabel yang bisa dijadikan faktor untuk grup (termasuk variabel kategorik hasil kategorisasi)
-      factor_vars <- names(df)[sapply(df, function(x) {
-        is.factor(x) || is.character(x) || 
-          (is.numeric(x) && length(unique(x[!is.na(x)])) <= 10) # Numerik dengan sedikit unique values
-      })]
-      
-      # Tambahkan variabel kategorik yang dibuat dari kategorisasi (yang berakhiran "_cat")
-      cat_vars <- names(df)[grepl("_cat$", names(df))]
-      factor_vars <- unique(c(factor_vars, cat_vars))
-      
       tagList(
-        selectInput("prop_test_2_var_response", "Variabel Respon (Numerik):", 
-                    choices = setNames(numeric_vars, numeric_vars),
-                    selected = if(length(numeric_vars) > 0) numeric_vars[1] else NULL),
+        selectInput("prop_test_2_var_cat", "Variabel Kategori (Biner/Kategorik):", 
+                    choices = factor_like_cols,
+                    selected = if(length(factor_like_cols) > 0) factor_like_cols[1] else NULL),
         selectInput("prop_test_2_var_group", "Variabel Grup (Kategorik):", 
-                    choices = setNames(factor_vars, factor_vars),
-                    selected = if(length(factor_vars) > 0) factor_vars[1] else NULL)
+                    choices = factor_like_cols, 
+                    selected = if(length(factor_like_cols) > 0) factor_like_cols[1] else NULL)
       )
     })
     output$var_var_test_1_ui <- renderUI({
       selectInput("var_test_1_var", "Pilih Variabel Numerik:", choices = numeric_cols)
     })
     output$var_var_test_2_ui <- renderUI({
-      req(current_data())
-      df <- current_data()
-      
-      # Dapatkan variabel numerik untuk respon
-      numeric_vars <- names(df)[sapply(df, is.numeric)]
-      
-      # Dapatkan variabel yang bisa dijadikan faktor untuk grup (termasuk variabel kategorik hasil kategorisasi)
-      factor_vars <- names(df)[sapply(df, function(x) {
-        is.factor(x) || is.character(x) || 
-          (is.numeric(x) && length(unique(x[!is.na(x)])) <= 10) # Numerik dengan sedikit unique values
-      })]
-      
-      # Tambahkan variabel kategorik yang dibuat dari kategorisasi (yang berakhiran "_cat")
-      cat_vars <- names(df)[grepl("_cat$", names(df))]
-      factor_vars <- unique(c(factor_vars, cat_vars))
-      
       tagList(
         selectInput("var_test_2_var_response", "Variabel Respon (Numerik):", 
-                    choices = setNames(numeric_vars, numeric_vars),
-                    selected = if(length(numeric_vars) > 0) numeric_vars[1] else NULL),
+                    choices = numeric_cols,
+                    selected = if(length(numeric_cols) > 0) numeric_cols[1] else NULL),
         selectInput("var_test_2_var_group", "Variabel Grup (Kategorik):", 
-                    choices = setNames(factor_vars, factor_vars),
-                    selected = if(length(factor_vars) > 0) factor_vars[1] else NULL)
+                    choices = factor_like_cols, 
+                    selected = if(length(factor_like_cols) > 0) factor_like_cols[1] else NULL)
       )
     })
     
     # ANOVA
     output$anova_1_way_ui <- renderUI({
-      req(current_data())
-      df <- current_data()
-      
-      # Dapatkan variabel numerik untuk respon
-      numeric_vars <- names(df)[sapply(df, is.numeric)]
-      
-      # Dapatkan variabel yang bisa dijadikan faktor untuk grup (termasuk variabel kategorik hasil kategorisasi)
-      factor_vars <- names(df)[sapply(df, function(x) {
-        is.factor(x) || is.character(x) || 
-          (is.numeric(x) && length(unique(x[!is.na(x)])) <= 10) # Numerik dengan sedikit unique values
-      })]
-      
-      # Tambahkan variabel kategorik yang dibuat dari kategorisasi (yang berakhiran "_cat")
-      cat_vars <- names(df)[grepl("_cat$", names(df))]
-      factor_vars <- unique(c(factor_vars, cat_vars))
-      
       tagList(
         selectInput("anova_1_resp", "Variabel Respon (Numerik):", 
-                    choices = setNames(numeric_vars, numeric_vars),
-                    selected = if(length(numeric_vars) > 0) numeric_vars[1] else NULL),
+                    choices = numeric_cols,
+                    selected = if(length(numeric_cols) > 0) numeric_cols[1] else NULL),
         selectInput("anova_1_group", "Variabel Grup (Kategorik):", 
-                    choices = setNames(factor_vars, factor_vars),
-                    selected = if(length(factor_vars) > 0) factor_vars[1] else NULL)
+                    choices = factor_like_cols,
+                    selected = if(length(factor_like_cols) > 0) factor_like_cols[1] else NULL)
       )
     })
     output$anova_2_way_ui <- renderUI({
-      req(current_data())
-      df <- current_data()
-      
-      # Dapatkan variabel numerik untuk respon
-      numeric_vars <- names(df)[sapply(df, is.numeric)]
-      
-      # Dapatkan variabel yang bisa dijadikan faktor untuk grup (termasuk variabel kategorik hasil kategorisasi)
-      factor_vars <- names(df)[sapply(df, function(x) {
-        is.factor(x) || is.character(x) || 
-          (is.numeric(x) && length(unique(x[!is.na(x)])) <= 10) # Numerik dengan sedikit unique values
-      })]
-      
-      # Tambahkan variabel kategorik yang dibuat dari kategorisasi (yang berakhiran "_cat")
-      cat_vars <- names(df)[grepl("_cat$", names(df))]
-      factor_vars <- unique(c(factor_vars, cat_vars))
-      
       tagList(
         selectInput("anova_2_resp", "Variabel Respon (Numerik):", 
-                    choices = setNames(numeric_vars, numeric_vars),
-                    selected = if(length(numeric_vars) > 0) numeric_vars[1] else NULL),
-        selectInput("anova_2_group", "Variabel Grup (Kategorik):", 
-                    choices = setNames(factor_vars, factor_vars),
-                    selected = if(length(factor_vars) > 0) factor_vars[1] else NULL),
-        selectInput("anova_2_group", "Variabel Grup (Kategorik):", 
-                    choices = setNames(factor_vars, factor_vars),
-                    selected = if(length(factor_vars) > 0) factor_vars[1] else NULL)
+                    choices = numeric_cols,
+                    selected = if(length(numeric_cols) > 0) numeric_cols[1] else NULL),
+        selectInput("anova_2_factor1", "Variabel Faktor 1 (Kategorik):", 
+                    choices = factor_like_cols,
+                    selected = if(length(factor_like_cols) > 0) factor_like_cols[1] else NULL),
+        selectInput("anova_2_factor2", "Variabel Faktor 2 (Kategorik):",
+                    choices = factor_like_cols,
+                    selected = if(length(factor_like_cols) > 0) factor_like_cols[1] else NULL)
       )
     })
     
@@ -1171,36 +1011,33 @@ server <- function(input, output, session) {
     tryCatch({
       df <- read.csv(input$upload_file$datapath, header = input$header)
       data_r(df)
-      current_dataset_name_r(input$upload_file$name) # Update nama dataset dengan nama file yang diunggah
+      current_dataset_name_r(input$upload_file$name) 
       showNotification("Data berhasil diunggah!", type = "success")
     }, error = function(e) {
       showNotification(paste("Error membaca file:", e$message), type = "error")
-      data_r(NULL) # Reset data jika ada error
-      current_dataset_name_r("Error mengunggah file") # Update nama dataset
+      data_r(NULL) 
+      current_dataset_name_r("Error mengunggah file") 
     })
   })
   
-  # Tambahkan output untuk menampilkan nama dataset aktif di UI
   output$active_dataset_name <- renderText({
     current_dataset_name_r()
   })
   
-  # Pastikan output metadata lainnya tetap berfungsi dengan `current_data()`
   output$metadata_str <- renderPrint({
-    req(data_r()) # Menggunakan data_r() sebagai ganti current_data() jika data_r adalah reactiveVal utama
+    req(data_r()) 
     str(data_r())
   })
   
   output$metadata_summary <- renderPrint({
-    req(data_r()) # Menggunakan data_r()
+    req(data_r())
     summary(data_r())
   })
   
   output$column_details_table <- renderDT({
-    req(data_r())  # Pastikan data tersedia
+    req(data_r())
     df <- data_r()
     
-    # Buat vektor deskripsi manual (harus sesuai urutan dan jumlah kolom df)
     deskripsi <- c(
       "Kode wilayah/kabupaten",
       "Persentase penduduk usia di bawah 5 tahun",
@@ -1221,12 +1058,10 @@ server <- function(input, output, session) {
       "Jumlah total penduduk"
     )
     
-    # Pastikan panjang deskripsi sesuai jumlah kolom
     if (length(deskripsi) != ncol(df)) {
       deskripsi <- rep(NA, ncol(df))  # atau tampilkan pesan kesalahan jika perlu
     }
     
-    # Buat data frame untuk tampilan metadata
     col_details <- data.frame(
       "Nama Kolom" = names(df),
       "Tipe Data" = sapply(df, class),
@@ -1243,27 +1078,32 @@ server <- function(input, output, session) {
   
   observeEvent(input$categorize_data, {
     req(data_r(), input$cat_var_name, input$cat_num_bins, input$cat_method)
-    df <- data_r()
+    
+    df <- current_data() 
     var_name <- input$cat_var_name
     num_bins <- input$cat_num_bins
     cat_method <- input$cat_method
     
+    # Memeriksa apakah variabel yang dipilih adalah numerik
     if (!is.numeric(df[[var_name]])) {
       showNotification("Variabel yang dipilih harus numerik untuk dikategorikan.", type = "warning")
       return()
     }
+    # Memeriksa jumlah kategori minimal
     if (num_bins < 2) {
       showNotification("Jumlah kategori minimal 2.", type = "warning")
       return()
     }
     
+    # Melakukan kategorisasi berdasarkan metode yang dipilih
     if (cat_method == "equal_width") {
+      # Metode Lebar Interval Sama
       df[[paste0(var_name, "_cat")]] <- cut(df[[var_name]], breaks = num_bins, include.lowest = TRUE, ordered_result = TRUE)
       interpretasi_text <- paste0("Variabel '", var_name, "' telah berhasil dikategorikan menjadi ", num_bins, " kelompok baru dengan nama '", var_name, "_cat' menggunakan metode 'Lebar Interval Sama'.\n\nInterpretasi: Metode ini membagi rentang nilai variabel menjadi interval dengan lebar yang sama. Ini berguna ketika Anda ingin memastikan bahwa setiap kategori mencakup rentang nilai yang seragam.")
     } else if (cat_method == "equal_frequency") {
-      # Use quantile to create equal frequency bins
+      # Metode Frekuensi Interval Sama (menggunakan kuantil)
       breaks_quantile <- unique(quantile(df[[var_name]], probs = seq(0, 1, by = 1/num_bins), na.rm = TRUE))
-      # Ensure at least two unique breaks for cut
+      # Memastikan setidaknya ada dua batas unik untuk fungsi cut
       if (length(breaks_quantile) < 2) {
         showNotification("Tidak cukup variasi data untuk membuat kategori frekuensi yang sama dengan jumlah bin yang diminta.", type = "warning")
         return()
@@ -1272,21 +1112,23 @@ server <- function(input, output, session) {
       interpretasi_text <- paste0("Variabel '", var_name, "' telah berhasil dikategorikan menjadi ", num_bins, " kelompok baru dengan nama '", var_name, "_cat' menggunakan metode 'Frekuensi Interval Sama'.\n\nInterpretasi: Metode ini berusaha agar setiap kategori memiliki jumlah observasi (data point) yang relatif sama. Ini berguna ketika Anda ingin distribusi data yang lebih merata di antara kategori.")
     }
     
-    managed_data(df) # Simpan data yang dimanipulasi di reactiveVal terpisah
+    # Menyimpan data yang dimanipulasi di reactiveVal terpisah
+    managed_data(df)
+    # Menampilkan interpretasi hasil kategorisasi
     output$interpretasi_manajemen <- renderText({ interpretasi_text })
   })
   
   current_data <- reactive({
     if(is.null(managed_data())){
-      return (data_r())
+      return (data_r()) 
     } else {
-      return(managed_data())
+      return(managed_data()) 
     }
   })
   
-  # Pratinjau data: gunakan data_r() jika managed_data() belum ada, sebaliknya gunakan managed_data()
   output$managed_data_preview <- renderDT({
     req(current_data())
+    current_data() 
   })
   
   output$download_managed_data <- downloadHandler(
@@ -1301,8 +1143,8 @@ server <- function(input, output, session) {
   
   # --- Eksplorasi Data Server ---
   output$deskriptif_output <- renderPrint({
-    req(data_r(), input$desc_stat_var)
-    df <- data_r()
+    req(current_data(), input$desc_stat_var) 
+    df <- current_data()
     var_name <- input$desc_stat_var
     if (!var_name %in% names(df)) return(cat("Variabel tidak ditemukan."))
     
@@ -1315,11 +1157,9 @@ server <- function(input, output, session) {
     }
   })
   
-  # --- Tambahkan/Ubah bagian ini ---
-  # Ekspresi reaktif baru untuk menghasilkan teks interpretasi deskriptif
   interpretasi_deskriptif_content <- reactive({
-    req(data_r(), input$desc_stat_var)
-    df <- data_r()
+    req(current_data(), input$desc_stat_var)
+    df <- current_data()
     var_name <- input$desc_stat_var
     if (!var_name %in% names(df)) return("Pilih variabel untuk interpretasi.")
     
@@ -1337,22 +1177,18 @@ server <- function(input, output, session) {
       t_val <- table(df[[var_name]])
       paste0("Distribusi frekuensi untuk variabel '", var_name, "':\n",
              paste(names(t_val), t_val, sep = ": ", collapse = "\n"), "\n\n",
-             "Interpretasi: Ini menunjukkan berapa kali setiap kategori muncul dalam dataset. Sangat berguna untuk memahami distribusi data kategorik.")
+             "Interpretasi: Ini berguna untuk memahami distribusi data kategorik.")
     }
   })
   
-  # Gunakan ekspresi reaktif baru untuk mengisi output$interpretasi_deskriptif
   output$interpretasi_deskriptif <- renderText({
     interpretasi_deskriptif_content()
   })
-  # --- Akhir bagian yang diubah ---
   
   
-  # Helper function to render Rmd to PDF/Word
   render_report <- function(temp_file, output_format, content_func, interpretation_func = NULL, title = "Laporan Analisis") {
     tempReport <- file.path(tempdir(), "report.Rmd")
     
-    # Generate Rmd content
     report_content <- c(
       "---",
       paste0("title: \"", title, "\""),
@@ -1385,54 +1221,76 @@ server <- function(input, output, session) {
   }
   
   output$download_desc_stat <- downloadHandler(
-    filename = function() { paste("statistik_deskriptif_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("statistik_deskriptif_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = function() {
-                      df <- data_r()
-                      var_name <- input$desc_stat_var
-                      if (is.numeric(df[[var_name]])) {
-                        capture.output(summary(df[[var_name]]))
-                      } else {
-                        capture.output(table(df[[var_name]]))
-                      }
-                    },
-                    # --- Ganti baris ini ---
-                    interpretation_func = interpretasi_deskriptif_content, # Teruskan ekspresi reaktif baru
-                    # --- Akhir ganti ---
-                    title = paste("Statistik Deskriptif untuk", input$desc_stat_var))
+      req(current_data(), input$desc_stat_var, interpretasi_deskriptif_content())
+      
+      df <- current_data()
+      var_name <- input$desc_stat_var
+      
+      hasil <- if (is.numeric(df[[var_name]])) {
+        capture.output(summary(df[[var_name]]))
+      } else {
+        capture.output(table(df[[var_name]]))
+      }
+      
+      interpretasi <- interpretasi_deskriptif_content()
+      title <- paste("Statistik Deskriptif untuk", var_name)
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, title, font = 2, cex = 1.5)
+      text(0, 0.85, "Hasil:", font = 2, adj = c(0, 1), cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1), cex = 1)
+      text(0, 0.6, "Interpretasi:", font = 2, adj = c(0, 1), cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1), cex = 1)
+      dev.off()
     }
   )
   
+  
   output$download_desc_stat_word <- downloadHandler(
-    filename = function() { paste("statistik_deskriptif_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("statistik_deskriptif_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = function() {
-                      df <- data_r()
-                      var_name <- input$desc_stat_var
-                      if (is.numeric(df[[var_name]])) {
-                        capture.output(summary(df[[var_name]]))
-                      } else {
-                        capture.output(table(df[[var_name]]))
-                      }
-                    },
-                    # --- Ganti baris ini ---
-                    interpretation_func = interpretasi_deskriptif_content, # Teruskan ekspresi reaktif baru
-                    # --- Akhir ganti ---
-                    title = paste("Statistik Deskriptif untuk", input$desc_stat_var))
+      req(current_data(), input$desc_stat_var, interpretasi_deskriptif_content())
+      
+      df <- current_data()
+      var_name <- input$desc_stat_var
+      
+      hasil <- if (is.numeric(df[[var_name]])) {
+        capture.output(summary(df[[var_name]]))
+      } else {
+        capture.output(table(df[[var_name]]))
+      }
+      
+      interpretasi <- interpretasi_deskriptif_content()
+      title <- paste("Statistik Deskriptif untuk", var_name)
+      
+      doc <- officer::read_docx() %>%
+        body_add_par(title, style = "heading 1") %>%
+        body_add_par("Hasil:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
+  
   
   data_plot_obj <- reactiveVal(NULL)
   observeEvent(input$generate_plot, {
-    req(data_r(), input$plot_type)
-    df <- data_r()
+    req(current_data(), input$plot_type) 
+    df <- current_data()
     plot_type <- input$plot_type
     p <- NULL
     interpretasi <- ""
     
-    if (plot_type == "Histogram") {
+    if (plot_type == "Histogram" || plot_type == "Boxplot") {
       req(input$plot_var_x)
       var_x <- input$plot_var_x
       if (!is.numeric(df[[var_x]])) {
@@ -1517,7 +1375,6 @@ server <- function(input, output, session) {
                                if (color_col != "None" && color_col %in% names(df)) paste0("Titik-titik diwarnai berdasarkan variabel '", color_col, "'.") else "Titik-titik menunjukkan lokasi data.")
       }
     } else if (plot_type == "Peta Jarak") {
-      # Distance matrix visualization using MDS
       req(distance_data())
       
       tryCatch({
@@ -1541,8 +1398,8 @@ server <- function(input, output, session) {
         map_data <- coordinates
         
         # Add SoVI data if available and color variable selected
-        if (color_var != "None" && !is.null(data_r()) && nrow(data_r()) > 0) {
-          sovi_df <- data_r()
+        if (color_var != "None" && !is.null(current_data()) && nrow(current_data()) > 0) { # Menggunakan current_data()
+          sovi_df <- current_data() # Menggunakan current_data()
           if ("DISTRICTCODE" %in% names(sovi_df) && color_var %in% names(sovi_df)) {
             # Match districts with coordinates
             sovi_subset <- sovi_df[sovi_df$DISTRICTCODE %in% coordinates$district_id, ]
@@ -1582,7 +1439,6 @@ server <- function(input, output, session) {
                     addLegend("bottomright", pal = pal, values = ~get(color_var), title = color_var)
                 }
               } else {
-                # No valid color data, use default markers
                 m <- m %>%
                   addCircleMarkers(lng = ~longitude, lat = ~latitude,
                                  radius = point_size,
@@ -1593,7 +1449,6 @@ server <- function(input, output, session) {
                                               "<br>Lon:", round(longitude, 4)))
               }
             } else {
-              # No matching districts found
               m <- m %>%
                 addCircleMarkers(lng = ~longitude, lat = ~latitude,
                                radius = point_size,
@@ -1674,8 +1529,8 @@ server <- function(input, output, session) {
   interpretasi_normalitas_text <- reactiveVal("")
   
   observeEvent(input$run_normalitas, {
-    req(data_r(), input$norm_var)
-    df <- data_r()
+    req(current_data(), input$norm_var) # Menggunakan current_data()
+    df <- current_data()
     var <- df[[input$norm_var]]
     
     if (!is.numeric(var)) {
@@ -1712,24 +1567,53 @@ server <- function(input, output, session) {
   })
   
   output$download_normalitas <- downloadHandler(
-    filename = function() { paste("uji_normalitas_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("uji_normalitas_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(normalitas_test_output),
-                    interpretation_func = reactive(interpretasi_normalitas_text),
-                    title = paste("Hasil Uji Normalitas untuk", input$norm_var))
+      req(input$norm_var, normalitas_test_output(), interpretasi_normalitas_text())
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      title_text <- paste("Hasil Uji Normalitas untuk", input$norm_var)
+      text(0.5, 0.95, title_text, cex = 1.5, font = 2)
+      
+      # Hasil uji
+      hasil <- capture.output(normalitas_test_output())
+      hasil_text <- paste(hasil, collapse = "\n")
+      text(0, 0.85, paste("Hasil Uji:\n", hasil_text), adj = c(0, 1))
+      
+      # Interpretasi
+      interpretasi <- interpretasi_normalitas_text()
+      text(0, 0.5, paste("Interpretasi:\n", interpretasi), adj = c(0, 1))
+      
+      dev.off()
     }
   )
   
   output$download_normalitas_word <- downloadHandler(
-    filename = function() { paste("uji_normalitas_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("uji_normalitas_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(normalitas_test_output),
-                    interpretation_func = reactive(interpretasi_normalitas_text),
-                    title = paste("Hasil Uji Normalitas untuk", input$norm_var))
+      req(input$norm_var, normalitas_test_output(), interpretasi_normalitas_text())
+      
+      hasil <- capture.output(normalitas_test_output())
+      interpretasi <- interpretasi_normalitas_text()
+      
+      doc <- read_docx()
+      
+      doc <- doc %>%
+        body_add_par(paste("Hasil Uji Normalitas untuk Variabel:", input$norm_var), style = "heading 1") %>%
+        body_add_par("Hasil Uji Statistik:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
+  
   
   # --- Uji Asumsi Server (Homogenitas) ---
   homogenitas_test_output <- reactiveVal(NULL)
@@ -1737,33 +1621,42 @@ server <- function(input, output, session) {
   
   observeEvent(input$run_homogenitas, {
     req(current_data(), input$homo_var_response, input$homo_var_group)
-    df <- current_data()  # Menggunakan current_data() agar dapat mengakses data yang sudah dikategorikan
+    df <- current_data()
     response_var <- df[[input$homo_var_response]]
     group_var <- as.factor(df[[input$homo_var_group]])
     
     if (!is.numeric(response_var)) {
       interpretasi_homogenitas_text("Variabel respon harus numerik.")
-      homogenitas_test_output("Input variabel tidak sesuai.")
+      homogenitas_test_output(list(error = "Input variabel tidak sesuai."))
       return()
     }
     
-    # Cek apakah variabel grup dapat dikonversi menjadi faktor
     if (is.null(group_var) || all(is.na(group_var))) {
       interpretasi_homogenitas_text("Variabel grup tidak valid atau mengandung semua nilai NA.")
-      homogenitas_test_output("Variabel grup tidak valid.")
+      homogenitas_test_output(list(error = "Variabel grup tidak valid."))
       return()
     }
     
     if (length(levels(group_var)) < 2) {
       interpretasi_homogenitas_text("Variabel grup harus memiliki setidaknya dua kategori.")
-      homogenitas_test_output("Variabel grup tidak valid.")
+      homogenitas_test_output(list(error = "Variabel grup tidak valid."))
       return()
     }
     
     test_result <- car::leveneTest(response_var ~ group_var)
-    homogenitas_test_output(capture.output(print(test_result)))
     
-    p_value <- test_result$`Pr(>F)`[1] # For Levene's test
+    df1 <- test_result$Df[1] 
+    df2 <- test_result$Df[2] 
+    f_value <- test_result$`F value`[1] 
+    p_value <- test_result$`Pr(>F)`[1]
+    
+    homogenitas_test_output(list(
+      df1 = df1,
+      df2 = df2,
+      f_value = f_value,
+      p_value = p_value,
+      raw_output = capture.output(print(test_result))
+    ))
     
     interpretasi <- paste0("Uji Homogenitas (Levene's Test) untuk variabel respon '", input$homo_var_response, "' berdasarkan grup '", input$homo_var_group, "' menghasilkan nilai p sebesar ", round(p_value, 4), ".\n\n")
     if (p_value < 0.05) {
@@ -1776,7 +1669,16 @@ server <- function(input, output, session) {
   
   output$homogenitas_output <- renderPrint({
     req(homogenitas_test_output())
-    cat(paste(homogenitas_test_output(), collapse = "\n"))
+    output_data <- homogenitas_test_output()
+    
+    if (!is.null(output_data$error)) {
+      cat(output_data$error)
+    } else {
+      cat("Hasil Uji Homogenitas:\n")
+      cat("Levene's Test for Homogeneity of Variance (center = median)\n")
+      cat(sprintf("%-10s %-10s %-10s\n", "Df1", "Df2", "F value", "Pr(>F)"))
+      cat(sprintf("%-10.0f %-10.0f %-10.3f %-10.3f\n", output_data$df1, output_data$df2, output_data$f_value, output_data$p_value))
+    }
   })
   
   output$interpretasi_homogenitas <- renderText({
@@ -1785,33 +1687,63 @@ server <- function(input, output, session) {
   })
   
   output$download_homogenitas <- downloadHandler(
-    filename = function() { paste("uji_homogenitas_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("uji_homogenitas_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(homogenitas_test_output),
-                    interpretation_func = reactive(interpretasi_homogenitas_text),
-                    title = paste("Hasil Uji Homogenitas untuk", input$homo_var_response))
+      req(input$homo_var_response, homogenitas_test_output(), interpretasi_homogenitas_text())
+      
+      hasil <- capture.output(homogenitas_test_output())
+      interpretasi <- interpretasi_homogenitas_text()
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      title_text <- paste("Hasil Uji Homogenitas untuk", input$homo_var_response)
+      text(0.5, 0.95, title_text, cex = 1.5, font = 2)
+      
+      # Hasil uji
+      text(0, 0.85, "Hasil Uji:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1), cex = 1)
+      
+      # Interpretasi
+      text(0, 0.6, "Interpretasi:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1), cex = 1)
+      
+      dev.off()
     }
   )
+  
   
   output$download_homogenitas_word <- downloadHandler(
-    filename = function() { paste("uji_homogenitas_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("uji_homogenitas_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(homogenitas_test_output),
-                    interpretation_func = reactive(interpretasi_homogenitas_text),
-                    title = paste("Hasil Uji Homogenitas untuk", input$homo_var_response))
+      req(input$homo_var_response, homogenitas_test_output(), interpretasi_homogenitas_text())
+      
+      hasil <- capture.output(homogenitas_test_output())
+      interpretasi <- interpretasi_homogenitas_text()
+      
+      doc <- officer::read_docx()
+      
+      doc <- doc %>%
+        body_add_par(paste("Hasil Uji Homogenitas untuk", input$homo_var_response), style = "heading 1") %>%
+        body_add_par("Hasil Uji Statistik:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
-  
   
   # --- Uji Beda Rata-rata Server (t-test 1 Kelompok) ---
   t_test_1_output_val <- reactiveVal(NULL)
   interpretasi_t_test_1_text <- reactiveVal("")
   
   observeEvent(input$run_t_test_1, {
-    req(data_r(), input$t_test_1_var, input$mu_t_test_1)
-    df <- data_r()
+    req(current_data(), input$t_test_1_var, input$mu_t_test_1) # Menggunakan current_data()
+    df <- current_data()
     var <- df[[input$t_test_1_var]]
     mu <- input$mu_t_test_1
     
@@ -1845,32 +1777,54 @@ server <- function(input, output, session) {
   })
   
   output$download_t_test_1 <- downloadHandler(
-    filename = function() { paste("uji_t_1_kelompok_", Sys.Date(), ".pdf", sep="") },
+    filename = function() { paste0("uji_t_1_kelompok_", Sys.Date(), ".pdf") },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(t_test_1_output_val),
-                    interpretation_func = reactive(interpretasi_t_test_1_text),
-                    title = paste("Hasil Uji T 1 Kelompok untuk", input$t_test_1_var))
+      req(input$t_test_1_var, t_test_1_output_val(), interpretasi_t_test_1_text())
+      hasil <- capture.output(t_test_1_output_val())
+      interpretasi <- interpretasi_t_test_1_text()
+      title <- paste("Hasil Uji T 1 Kelompok untuk", input$t_test_1_var)
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, title, cex = 1.5, font = 2)
+      
+      text(0, 0.85, "Hasil Uji:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1), cex = 1)
+      
+      text(0, 0.6, "Interpretasi:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1), cex = 1)
+      dev.off()
     }
   )
   
+  
   output$download_t_test_1_word <- downloadHandler(
-    filename = function() { paste("uji_t_1_kelompok_", Sys.Date(), ".docx", sep="") },
+    filename = function() { paste0("uji_t_1_kelompok_", Sys.Date(), ".docx") },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(t_test_1_output_val),
-                    interpretation_func = reactive(interpretasi_t_test_1_text),
-                    title = paste("Hasil Uji T 1 Kelompok untuk", input$t_test_1_var))
+      req(input$t_test_1_var, t_test_1_output_val(), interpretasi_t_test_1_text())
+      hasil <- capture.output(t_test_1_output_val())
+      interpretasi <- interpretasi_t_test_1_text()
+      title <- paste("Hasil Uji T 1 Kelompok untuk", input$t_test_1_var)
+      
+      doc <- officer::read_docx() %>%
+        body_add_par(title, style = "heading 1") %>%
+        body_add_par("Hasil Uji:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
+  
   
   # --- Uji Beda Rata-rata Server (t-test 2 Kelompok) ---
   t_test_2_output_val <- reactiveVal(NULL)
   interpretasi_t_test_2_text <- reactiveVal("")
   
   observeEvent(input$run_t_test_2, {
-    req(data_r(), input$t_test_2_type)
-    df <- data_r()
+    req(current_data(), input$t_test_2_type) 
+    df <- current_data()
     test_type <- input$t_test_2_type
     
     test_result <- NULL
@@ -1924,24 +1878,50 @@ server <- function(input, output, session) {
   })
   
   output$download_t_test_2 <- downloadHandler(
-    filename = function() { paste("uji_t_2_kelompok_", input$t_test_2_type, "_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("uji_t_2_kelompok_", input$t_test_2_type, "_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(t_test_2_output_val),
-                    interpretation_func = reactive(interpretasi_t_test_2_text),
-                    title = paste("Hasil Uji T 2 Kelompok (", input$t_test_2_type, ")"))
+      req(input$t_test_2_type, t_test_2_output_val(), interpretasi_t_test_2_text())
+      hasil <- capture.output(t_test_2_output_val())
+      interpretasi <- interpretasi_t_test_2_text()
+      title <- paste("Hasil Uji T 2 Kelompok (", input$t_test_2_type, ")")
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, title, cex = 1.5, font = 2)
+      
+      text(0, 0.85, "Hasil Uji:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1), cex = 1)
+      
+      text(0, 0.6, "Interpretasi:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1), cex = 1)
+      dev.off()
     }
   )
   
+  
   output$download_t_test_2_word <- downloadHandler(
-    filename = function() { paste("uji_t_2_kelompok_", input$t_test_2_type, "_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("uji_t_2_kelompok_", input$t_test_2_type, "_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(t_test_2_output_val),
-                    interpretation_func = reactive(interpretasi_t_test_2_text),
-                    title = paste("Hasil Uji T 2 Kelompok (", input$t_test_2_type, ")"))
+      req(input$t_test_2_type, t_test_2_output_val(), interpretasi_t_test_2_text())
+      hasil <- capture.output(t_test_2_output_val())
+      interpretasi <- interpretasi_t_test_2_text()
+      title <- paste("Hasil Uji T 2 Kelompok (", input$t_test_2_type, ")")
+      
+      doc <- officer::read_docx() %>%
+        body_add_par(title, style = "heading 1") %>%
+        body_add_par("Hasil Uji:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
+  
   
   
   # --- Uji Proporsi & Varians Server ---
@@ -1950,14 +1930,13 @@ server <- function(input, output, session) {
   interpretasi_prop_test_1_text <- reactiveVal("")
   
   observeEvent(input$run_prop_test_1, {
-    req(data_r(), input$prop_test_1_var, input$p_prop_test_1)
-    df <- data_r()
+    req(current_data(), input$prop_test_1_var, input$p_prop_test_1)
+    df <- current_data()
     var <- df[[input$prop_test_1_var]]
     p_hyp <- input$p_prop_test_1
     
-    # Convert to binary if not already (e.g., factor with 2 levels)
     if (is.factor(var) && length(levels(var)) == 2) {
-      x <- sum(var == levels(var)[2]) # Count occurrences of the second level
+      x <- sum(var == levels(var)[2]) 
       n <- length(var)
     } else if (is.numeric(var) && all(var %in% c(0, 1))) {
       x <- sum(var == 1)
@@ -1998,32 +1977,58 @@ server <- function(input, output, session) {
   })
   
   output$download_prop_test_1 <- downloadHandler(
-    filename = function() { paste("uji_proporsi_1_kelompok_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("uji_proporsi_1_kelompok_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(prop_test_1_output_val),
-                    interpretation_func = reactive(interpretasi_prop_test_1_text),
-                    title = paste("Hasil Uji Proporsi 1 Kelompok untuk", input$prop_test_1_var))
+      req(input$prop_test_1_var, prop_test_1_output_val(), interpretasi_prop_test_1_text())
+      hasil <- capture.output(prop_test_1_output_val())
+      interpretasi <- interpretasi_prop_test_1_text()
+      title <- paste("Hasil Uji Proporsi 1 Kelompok untuk", input$prop_test_1_var)
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, title, cex = 1.5, font = 2)
+      
+      text(0, 0.85, "Hasil Uji:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1), cex = 1)
+      
+      text(0, 0.6, "Interpretasi:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1), cex = 1)
+      dev.off()
     }
   )
   
+  
   output$download_prop_test_1_word <- downloadHandler(
-    filename = function() { paste("uji_proporsi_1_kelompok_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("uji_proporsi_1_kelompok_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(prop_test_1_output_val),
-                    interpretation_func = reactive(interpretasi_prop_test_1_text),
-                    title = paste("Hasil Uji Proporsi 1 Kelompok untuk", input$prop_test_1_var))
+      req(input$prop_test_1_var, prop_test_1_output_val(), interpretasi_prop_test_1_text())
+      hasil <- capture.output(prop_test_1_output_val())
+      interpretasi <- interpretasi_prop_test_1_text()
+      title <- paste("Hasil Uji Proporsi 1 Kelompok untuk", input$prop_test_1_var)
+      
+      doc <- officer::read_docx() %>%
+        body_add_par(title, style = "heading 1") %>%
+        body_add_par("Hasil Uji:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
+  
   
   # Proporsi 2 Kelompok
   prop_test_2_output_val <- reactiveVal(NULL)
   interpretasi_prop_test_2_text <- reactiveVal("")
   
   observeEvent(input$run_prop_test_2, {
-    req(data_r(), input$prop_test_2_var_cat, input$prop_test_2_var_group)
-    df <- data_r()
+    req(current_data(), input$prop_test_2_var_cat, input$prop_test_2_var_group)
+    df <- current_data()
     cat_var <- df[[input$prop_test_2_var_cat]]
     group_var <- as.factor(df[[input$prop_test_2_var_group]])
     
@@ -2033,11 +2038,17 @@ server <- function(input, output, session) {
       return()
     }
     
-    # Create a contingency table
-    counts <- table(cat_var, group_var)
-    if (nrow(counts) != 2) {
-      interpretasi_prop_test_2_text("Variabel kategori harus memiliki tepat 2 kategori untuk uji proporsi 2 kelompok.")
+    if (!is.factor(cat_var) || length(levels(cat_var)) != 2) {
+      interpretasi_prop_test_2_text("Variabel kategori harus biner (0/1) atau kategorik dengan 2 level untuk uji proporsi 2 kelompok.")
       prop_test_2_output_val("Variabel kategori tidak valid.")
+      return()
+    }
+    
+    counts <- table(cat_var, group_var)
+    
+    if (nrow(counts) != 2 || ncol(counts) != 2) {
+      interpretasi_prop_test_2_text("Tabel kontingensi yang dihasilkan tidak 2x2. Pastikan kedua variabel biner/kategorik 2-level.")
+      prop_test_2_output_val("Tabel kontingensi tidak valid.")
       return()
     }
     
@@ -2065,32 +2076,59 @@ server <- function(input, output, session) {
   })
   
   output$download_prop_test_2 <- downloadHandler(
-    filename = function() { paste("uji_proporsi_2_kelompok_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("uji_proporsi_2_kelompok_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(prop_test_2_output_val),
-                    interpretation_func = reactive(interpretasi_prop_test_2_text),
-                    title = paste("Hasil Uji Proporsi 2 Kelompok untuk", input$prop_test_2_var_cat))
+      req(input$prop_test_2_var_cat, prop_test_2_output_val(), interpretasi_prop_test_2_text())
+      hasil <- capture.output(prop_test_2_output_val())
+      interpretasi <- interpretasi_prop_test_2_text()
+      title <- paste("Hasil Uji Proporsi 2 Kelompok untuk", input$prop_test_2_var_cat)
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, title, cex = 1.5, font = 2)
+      
+      text(0, 0.85, "Hasil Uji:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1), cex = 1)
+      
+      text(0, 0.6, "Interpretasi:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1), cex = 1)
+      dev.off()
     }
   )
   
+  
   output$download_prop_test_2_word <- downloadHandler(
-    filename = function() { paste("uji_proporsi_2_kelompok_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("uji_proporsi_2_kelompok_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(prop_test_2_output_val),
-                    interpretation_func = reactive(interpretasi_prop_test_2_text),
-                    title = paste("Hasil Uji Proporsi 2 Kelompok untuk", input$prop_test_2_var_cat))
+      req(input$prop_test_2_var_cat, prop_test_2_output_val(), interpretasi_prop_test_2_text())
+      hasil <- capture.output(prop_test_2_output_val())
+      interpretasi <- interpretasi_prop_test_2_text()
+      title <- paste("Hasil Uji Proporsi 2 Kelompok untuk", input$prop_test_2_var_cat)
+      
+      doc <- officer::read_docx() %>%
+        body_add_par(title, style = "heading 1") %>%
+        body_add_par("Hasil Uji:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
+  
   
   # Varians 1 Kelompok
   var_test_1_output_val <- reactiveVal(NULL)
   interpretasi_var_test_1_text <- reactiveVal("")
   
   observeEvent(input$run_var_test_1, {
-    req(data_r(), input$var_test_1_var, input$sigma_var_test_1)
-    df <- data_r()
+    # Ubah data_r() menjadi current_data()
+    req(current_data(), input$var_test_1_var, input$sigma_var_test_1)
+    df <- current_data()
     var <- df[[input$var_test_1_var]]
     sigma_hyp <- input$sigma_var_test_1
     
@@ -2105,14 +2143,11 @@ server <- function(input, output, session) {
       return()
     }
     
-    # Chi-squared test for variance
-    # V = (n-1)S^2 / sigma^2
     n <- length(var)
     s_squared <- var(var, na.rm = TRUE)
     chi_squared_stat <- (n - 1) * s_squared / sigma_hyp
     p_value <- pchisq(chi_squared_stat, df = n - 1, lower.tail = FALSE) # One-tailed for greater than, often two-tailed is 2*min(p, 1-p)
     
-    # Simulate prop.test-like output structure
     test_output_text <- paste0(
       "\tChi-squared test for variance\n\n",
       "data: ", input$var_test_1_var, "\n",
@@ -2147,22 +2182,47 @@ server <- function(input, output, session) {
   })
   
   output$download_var_test_1 <- downloadHandler(
-    filename = function() { paste("uji_varians_1_kelompok_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("uji_varians_1_kelompok_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(var_test_1_output_val),
-                    interpretation_func = reactive(interpretasi_var_test_1_text),
-                    title = paste("Hasil Uji Varians 1 Kelompok untuk", input$var_test_1_var))
+      req(input$var_test_1_var, var_test_1_output_val(), interpretasi_var_test_1_text())
+      hasil <- capture.output(var_test_1_output_val())
+      interpretasi <- interpretasi_var_test_1_text()
+      title <- paste("Hasil Uji Varians 1 Kelompok untuk", input$var_test_1_var)
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, title, cex = 1.5, font = 2)
+      
+      text(0, 0.85, "Hasil Uji:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1), cex = 1)
+      
+      text(0, 0.6, "Interpretasi:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1), cex = 1)
+      dev.off()
     }
   )
   
+  
   output$download_var_test_1_word <- downloadHandler(
-    filename = function() { paste("uji_varians_1_kelompok_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("uji_varians_1_kelompok_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(var_test_1_output_val),
-                    interpretation_func = reactive(interpretasi_var_test_1_text),
-                    title = paste("Hasil Uji Varians 1 Kelompok untuk", input$var_test_1_var))
+      req(input$var_test_1_var, var_test_1_output_val(), interpretasi_var_test_1_text())
+      hasil <- capture.output(var_test_1_output_val())
+      interpretasi <- interpretasi_var_test_1_text()
+      title <- paste("Hasil Uji Varians 1 Kelompok untuk", input$var_test_1_var)
+      
+      doc <- officer::read_docx() %>%
+        body_add_par(title, style = "heading 1") %>%
+        body_add_par("Hasil Uji:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
   
@@ -2172,8 +2232,9 @@ server <- function(input, output, session) {
   interpretasi_var_test_2_text <- reactiveVal("")
   
   observeEvent(input$run_var_test_2, {
-    req(data_r(), input$var_test_2_var_response, input$var_test_2_var_group)
-    df <- data_r()
+    # Ubah data_r() menjadi current_data()
+    req(current_data(), input$var_test_2_var_response, input$var_test_2_var_group)
+    df <- current_data()
     response_var <- df[[input$var_test_2_var_response]]
     group_var <- as.factor(df[[input$var_test_2_var_group]])
     
@@ -2207,25 +2268,49 @@ server <- function(input, output, session) {
   })
   
   output$download_var_test_2 <- downloadHandler(
-    filename = function() { paste("uji_varians_2_kelompok_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("uji_varians_2_kelompok_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(var_test_2_output_val),
-                    interpretation_func = reactive(interpretasi_var_test_2_text),
-                    title = paste("Hasil Uji Varians 2 Kelompok untuk", input$var_test_2_var_response))
+      req(input$var_test_2_var_response, var_test_2_output_val(), interpretasi_var_test_2_text())
+      hasil <- capture.output(var_test_2_output_val())
+      interpretasi <- interpretasi_var_test_2_text()
+      title <- paste("Hasil Uji Varians 2 Kelompok untuk", input$var_test_2_var_response)
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, title, cex = 1.5, font = 2)
+      
+      text(0, 0.85, "Hasil Uji:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1), cex = 1)
+      
+      text(0, 0.6, "Interpretasi:", adj = c(0, 1), font = 2, cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1), cex = 1)
+      dev.off()
     }
   )
+  
   
   output$download_var_test_2_word <- downloadHandler(
-    filename = function() { paste("uji_varians_2_kelompok_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("uji_varians_2_kelompok_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(var_test_2_output_val),
-                    interpretation_func = reactive(interpretasi_var_test_2_text),
-                    title = paste("Hasil Uji Varians 2 Kelompok untuk", input$var_test_2_var_response))
+      req(input$var_test_2_var_response, var_test_2_output_val(), interpretasi_var_test_2_text())
+      hasil <- capture.output(var_test_2_output_val())
+      interpretasi <- interpretasi_var_test_2_text()
+      title <- paste("Hasil Uji Varians 2 Kelompok untuk", input$var_test_2_var_response)
+      
+      doc <- officer::read_docx() %>%
+        body_add_par(title, style = "heading 1") %>%
+        body_add_par("Hasil Uji:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
-  
   
   # --- ANOVA Server ---
   # ANOVA 1 Arah
@@ -2233,10 +2318,10 @@ server <- function(input, output, session) {
   interpretasi_anova_1_way_text <- reactiveVal("")
   
   observeEvent(input$run_anova_1_way, {
-    req(data_r(), input$anova_1_resp, input$anova_1_factor)
-    df <- data_r()
+    req(current_data(), input$anova_1_resp, input$anova_1_group) # Menggunakan current_data() dan input$anova_1_group
+    df <- current_data()
     response_var <- df[[input$anova_1_resp]]
-    factor_var <- as.factor(df[[input$anova_1_factor]])
+    factor_var <- as.factor(df[[input$anova_1_group]]) # Menggunakan input$anova_1_group
     
     if (!is.numeric(response_var) || !is.factor(factor_var)) {
       interpretasi_anova_1_way_text("Variabel respon harus numerik dan variabel faktor harus kategorik.")
@@ -2256,7 +2341,7 @@ server <- function(input, output, session) {
     anova_summary <- summary(aov_model)
     p_value <- anova_summary[[1]]$`Pr(>F)`[1] # p-value for the factor
     
-    interpretasi <- paste0("Hasil ANOVA Satu Arah untuk variabel respon '", input$anova_1_resp, "' dan variabel faktor '", input$anova_1_factor, "' menghasilkan nilai p sebesar ", round(p_value, 4), ".\n\n")
+    interpretasi <- paste0("Hasil ANOVA Satu Arah untuk variabel respon '", input$anova_1_resp, "' dan variabel faktor '", input$anova_1_group, "' menghasilkan nilai p sebesar ", round(p_value, 4), ".\n\n") # Menggunakan input$anova_1_group
     if (p_value < 0.05) {
       interpretasi <- paste0(interpretasi, "Interpretasi: Karena nilai p kurang dari 0.05, kita menolak hipotesis nol (H0). Ini menunjukkan ada perbedaan signifikan pada rata-rata variabel respon di antara setidaknya dua kelompok faktor.")
     } else {
@@ -2276,36 +2361,58 @@ server <- function(input, output, session) {
   })
   
   output$download_anova_1_way <- downloadHandler(
-    filename = function() { paste("anova_1_arah_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("anova_1_arah_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(anova_1_way_output_val),
-                    interpretation_func = reactive(interpretasi_anova_1_way_text),
-                    title = paste("Hasil ANOVA Satu Arah untuk", input$anova_1_resp))
+      req(input$anova_1_resp, anova_1_way_output_val(), interpretasi_anova_1_way_text())
+      hasil <- capture.output(anova_1_way_output_val())
+      interpretasi <- interpretasi_anova_1_way_text()
+      title <- paste("Hasil ANOVA Satu Arah untuk", input$anova_1_resp)
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, title, font = 2, cex = 1.5)
+      text(0, 0.85, "Hasil Uji:", font = 2, adj = c(0, 1), cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1))
+      text(0, 0.6, "Interpretasi:", font = 2, adj = c(0, 1), cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1))
+      dev.off()
     }
   )
+  
   
   output$download_anova_1_way_word <- downloadHandler(
-    filename = function() { paste("anova_1_arah_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("anova_1_arah_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(anova_1_way_output_val),
-                    interpretation_func = reactive(interpretasi_anova_1_way_text),
-                    title = paste("Hasil ANOVA Satu Arah untuk", input$anova_1_resp))
+      req(input$anova_1_resp, anova_1_way_output_val(), interpretasi_anova_1_way_text())
+      hasil <- capture.output(anova_1_way_output_val())
+      interpretasi <- interpretasi_anova_1_way_text()
+      title <- paste("Hasil ANOVA Satu Arah untuk", input$anova_1_resp)
+      
+      doc <- officer::read_docx() %>%
+        body_add_par(title, style = "heading 1") %>%
+        body_add_par("Hasil Uji:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
-  
   
   # ANOVA 2 Arah
   anova_2_way_output_val <- reactiveVal(NULL)
   interpretasi_anova_2_way_text <- reactiveVal("")
   
   observeEvent(input$run_anova_2_way, {
-    req(data_r(), input$anova_2_resp, input$anova_2_factor1, input$anova_2_factor2)
-    df <- data_r()
+    req(current_data(), input$anova_2_resp, input$anova_2_factor1, input$anova_2_factor2) # Menggunakan current_data() dan input$anova_2_factor1, input$anova_2_factor2
+    df <- current_data()
     response_var <- df[[input$anova_2_resp]]
-    factor1_var <- as.factor(df[[input$anova_2_factor1]])
-    factor2_var <- as.factor(df[[input$anova_2_factor2]])
+    factor1_var <- as.factor(df[[input$anova_2_factor1]]) # Menggunakan input$anova_2_factor1
+    factor2_var <- as.factor(df[[input$anova_2_factor2]]) # Menggunakan input$anova_2_factor2
     
     if (!is.numeric(response_var) || !is.factor(factor1_var) || !is.factor(factor2_var)) {
       interpretasi_anova_2_way_text("Variabel respon harus numerik dan variabel faktor harus kategorik.")
@@ -2363,24 +2470,48 @@ server <- function(input, output, session) {
   })
   
   output$download_anova_2_way <- downloadHandler(
-    filename = function() { paste("anova_2_arah_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("anova_2_arah_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = reactive(anova_2_way_output_val),
-                    interpretation_func = reactive(interpretasi_anova_2_way_text),
-                    title = paste("Hasil ANOVA Dua Arah untuk", input$anova_2_resp))
+      req(input$anova_2_resp, anova_2_way_output_val(), interpretasi_anova_2_way_text())
+      hasil <- capture.output(anova_2_way_output_val())
+      interpretasi <- interpretasi_anova_2_way_text()
+      title <- paste("Hasil ANOVA Dua Arah untuk", input$anova_2_resp)
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, title, font = 2, cex = 1.5)
+      text(0, 0.85, "Hasil Uji:", font = 2, adj = c(0, 1), cex = 1.2)
+      text(0, 0.8, paste(hasil, collapse = "\n"), adj = c(0, 1))
+      text(0, 0.6, "Interpretasi:", font = 2, adj = c(0, 1), cex = 1.2)
+      text(0, 0.55, interpretasi, adj = c(0, 1))
+      dev.off()
     }
   )
   
+  
   output$download_anova_2_way_word <- downloadHandler(
-    filename = function() { paste("anova_2_arah_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("anova_2_arah_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = reactive(anova_2_way_output_val),
-                    interpretation_func = reactive(interpretasi_anova_2_way_text),
-                    title = paste("Hasil ANOVA Dua Arah untuk", input$anova_2_resp))
+      req(input$anova_2_resp, anova_2_way_output_val(), interpretasi_anova_2_way_text())
+      hasil <- capture.output(anova_2_way_output_val())
+      interpretasi <- interpretasi_anova_2_way_text()
+      title <- paste("Hasil ANOVA Dua Arah untuk", input$anova_2_resp)
+      
+      doc <- officer::read_docx() %>%
+        body_add_par(title, style = "heading 1") %>%
+        body_add_par("Hasil Uji:", style = "heading 2") %>%
+        body_add_par(paste(hasil, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(interpretasi, style = "Normal")
+      
+      print(doc, target = file)
     }
   )
+  
   
   # --- Regresi Linear Berganda Server ---
   reg_model <- reactiveVal(NULL)
@@ -2395,8 +2526,8 @@ server <- function(input, output, session) {
   interpretasi_reg_dw_text <- reactiveVal("")
   
   observeEvent(input$run_regresi, {
-    req(data_r(), input$reg_dependent, input$reg_independent)
-    df <- data_r()
+    req(current_data(), input$reg_dependent, input$reg_independent) # Menggunakan current_data()
+    df <- current_data()
     dependent_var <- input$reg_dependent
     independent_vars <- input$reg_independent
     
@@ -2547,91 +2678,102 @@ server <- function(input, output, session) {
   })
   
   output$download_regresi <- downloadHandler(
-    filename = function() { paste("hasil_regresi_", Sys.Date(), ".pdf", sep="") },
+    filename = function() {
+      paste0("hasil_regresi_", Sys.Date(), ".pdf")
+    },
     content = function(file) {
-      render_report(file, "pdf_document",
-                    content_func = function() {
-                      summary_output <- capture.output(summary(reg_model()))
-                      norm_output <- capture.output({
-                        if (length(residuals(reg_model())) > 3 && length(residuals(reg_model())) <= 5000) {
-                          print(shapiro.test(residuals(reg_model())))
-                        } else {
-                          print(tseries::jarque.bera.test(residuals(reg_model())))
-                        }
-                      })
-                      homo_output <- capture.output(car::ncvTest(reg_model()))
-                      vif_output <- capture.output(car::vif(reg_model()))
-                      dw_output <- capture.output(lmtest::dwtest(reg_model()))
-                      
-                      c(
-                        "--- Hasil Regresi Linear Berganda ---",
-                        summary_output,
-                        "\n--- Uji Asumsi Regresi: Normalitas Residual ---",
-                        norm_output,
-                        "\n--- Uji Asumsi Regresi: Homoskedastisitas ---",
-                        homo_output,
-                        "\n--- Uji Asumsi Regresi: Multikolinearitas (VIF) ---",
-                        vif_output,
-                        "\n--- Uji Asumsi Regresi: Autokorelasi (Durbin-Watson) ---",
-                        dw_output
-                      )
-                    },
-                    interpretation_func = reactive({
-                      # Combine all interpretations into a single character vector
-                      c(interpretasi_regresi_text(),
-                        interpretasi_reg_norm_text(),
-                        interpretasi_reg_homo_text(),
-                        interpretasi_reg_vif_text(),
-                        interpretasi_reg_dw_text())
-                    }),
-                    title = "Hasil Regresi Linear Berganda"
+      req(reg_model(), interpretasi_regresi_text(),
+          interpretasi_reg_norm_text(), interpretasi_reg_homo_text(),
+          interpretasi_reg_vif_text(), interpretasi_reg_dw_text())
+      
+      summary_output <- capture.output(summary(reg_model()))
+      norm_output <- capture.output({
+        if (length(residuals(reg_model())) > 3 && length(residuals(reg_model())) <= 5000) {
+          print(shapiro.test(residuals(reg_model())))
+        } else {
+          print(tseries::jarque.bera.test(residuals(reg_model())))
+        }
+      })
+      homo_output <- capture.output(car::ncvTest(reg_model()))
+      vif_output <- capture.output(car::vif(reg_model()))
+      dw_output <- capture.output(lmtest::dwtest(reg_model()))
+      
+      all_output <- c(
+        "--- Hasil Regresi Linear Berganda ---", summary_output,
+        "\n--- Uji Normalitas Residual ---", norm_output,
+        "\n--- Uji Homoskedastisitas ---", homo_output,
+        "\n--- Uji Multikolinearitas (VIF) ---", vif_output,
+        "\n--- Uji Autokorelasi (Durbin-Watson) ---", dw_output
       )
+      
+      all_interpretation <- c(
+        "--- Interpretasi Regresi ---", interpretasi_regresi_text(),
+        "\n--- Interpretasi Normalitas ---", interpretasi_reg_norm_text(),
+        "\n--- Interpretasi Homoskedastisitas ---", interpretasi_reg_homo_text(),
+        "\n--- Interpretasi VIF ---", interpretasi_reg_vif_text(),
+        "\n--- Interpretasi Durbin-Watson ---", interpretasi_reg_dw_text()
+      )
+      
+      pdf(file, width = 8.5, height = 11)
+      plot.new()
+      text(0.5, 0.95, "Hasil Regresi Linear Berganda", font = 2, cex = 1.5)
+      
+      text(0, 0.88, paste(all_output, collapse = "\n"), adj = c(0, 1), cex = 1)
+      text(0, 0.4, paste(all_interpretation, collapse = "\n"), adj = c(0, 1), cex = 1)
+      dev.off()
     }
   )
   
+  
   output$download_regresi_word <- downloadHandler(
-    filename = function() { paste("hasil_regresi_", Sys.Date(), ".docx", sep="") },
+    filename = function() {
+      paste0("hasil_regresi_", Sys.Date(), ".docx")
+    },
     content = function(file) {
-      render_report(file, "word_document",
-                    content_func = function() {
-                      summary_output <- capture.output(summary(reg_model()))
-                      norm_output <- capture.output({
-                        if (length(residuals(reg_model())) > 3 && length(residuals(reg_model())) <= 5000) {
-                          print(shapiro.test(residuals(reg_model())))
-                        } else {
-                          print(tseries::jarque.bera.test(residuals(reg_model())))
-                        }
-                      })
-                      homo_output <- capture.output(car::ncvTest(reg_model()))
-                      vif_output <- capture.output(car::vif(reg_model()))
-                      dw_output <- capture.output(lmtest::dwtest(reg_model()))
-                      
-                      c(
-                        "--- Hasil Regresi Linear Berganda ---",
-                        summary_output,
-                        "\n--- Uji Asumsi Regresi: Normalitas Residual ---",
-                        norm_output,
-                        "\n--- Uji Asumsi Regresi: Homoskedastisitas ---",
-                        homo_output,
-                        "\n--- Uji Asumsi Regresi: Multikolinearitas (VIF) ---",
-                        vif_output,
-                        "\n--- Uji Asumsi Regresi: Autokorelasi (Durbin-Watson) ---",
-                        dw_output
-                      )
-                    },
-                    interpretation_func = reactive({
-                      # Combine all interpretations into a single character vector
-                      c(interpretasi_regresi_text(),
-                        interpretasi_reg_norm_text(),
-                        interpretasi_reg_homo_text(),
-                        interpretasi_reg_vif_text(),
-                        interpretasi_reg_dw_text())
-                    }),
-                    title = "Hasil Regresi Linear Berganda"
+      req(reg_model(), interpretasi_regresi_text(),
+          interpretasi_reg_norm_text(), interpretasi_reg_homo_text(),
+          interpretasi_reg_vif_text(), interpretasi_reg_dw_text())
+      
+      summary_output <- capture.output(summary(reg_model()))
+      norm_output <- capture.output({
+        if (length(residuals(reg_model())) > 3 && length(residuals(reg_model())) <= 5000) {
+          print(shapiro.test(residuals(reg_model())))
+        } else {
+          print(tseries::jarque.bera.test(residuals(reg_model())))
+        }
+      })
+      homo_output <- capture.output(car::ncvTest(reg_model()))
+      vif_output <- capture.output(car::vif(reg_model()))
+      dw_output <- capture.output(lmtest::dwtest(reg_model()))
+      
+      all_output <- c(
+        "--- Hasil Regresi Linear Berganda ---", summary_output,
+        "\n--- Uji Normalitas Residual ---", norm_output,
+        "\n--- Uji Homoskedastisitas ---", homo_output,
+        "\n--- Uji Multikolinearitas (VIF) ---", vif_output,
+        "\n--- Uji Autokorelasi (Durbin-Watson) ---", dw_output
       )
+      
+      all_interpretation <- c(
+        "--- Interpretasi Regresi ---", interpretasi_regresi_text(),
+        "\n--- Interpretasi Normalitas ---", interpretasi_reg_norm_text(),
+        "\n--- Interpretasi Homoskedastisitas ---", interpretasi_reg_homo_text(),
+        "\n--- Interpretasi VIF ---", interpretasi_reg_vif_text(),
+        "\n--- Interpretasi Durbin-Watson ---", interpretasi_reg_dw_text()
+      )
+      
+      doc <- officer::read_docx() %>%
+        body_add_par("Hasil Regresi Linear Berganda", style = "heading 1") %>%
+        body_add_par(paste(all_output, collapse = "\n"), style = "Normal") %>%
+        body_add_par("Interpretasi:", style = "heading 2") %>%
+        body_add_par(paste(all_interpretation, collapse = "\n"), style = "Normal")
+      
+      print(doc, target = file)
     }
   )
-}
+  
+    }
+
 
 # Run the application
 shinyApp(ui = ui, server = server)
