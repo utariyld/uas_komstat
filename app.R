@@ -1,4 +1,4 @@
-# install.packages(c("shiny", "shinydashboard", "ggplot2", "dplyr", "psych", "car", "DT", "knitr", "rmarkdown", "tseries", "lmtest", "leaflet"))
+# install.packages(c("shiny", "shinydashboard", "ggplot2", "dplyr", "psych", "car", "DT", "knitr", "rmarkdown", "tseries", "lmtest", "leaflet", "officer", "flextable", "scales"))
 
 library(shiny)
 library(shinydashboard)
@@ -12,6 +12,9 @@ library(rmarkdown) # Untuk rendering laporan
 library(tseries) # Untuk uji Jarque-Bera (normalitas)
 library(lmtest) # Untuk uji Durbin-Watson (autokorelasi)
 library(leaflet) # Untuk visualisasi peta
+library(officer) # Untuk Word document
+library(flextable) # Untuk tabel dalam Word
+library(scales) # Untuk rescaling coordinates
 library(tinytex)
 
 # --- CSS Kustom dengan Tema Pink & Hijau Modern ---
@@ -582,8 +585,8 @@ ui <- dashboardPage(
                     downloadButton("download_desc_stat_word", "Download Statistik (Word)", class = "btn-info") # Added Word
                 ),
                 box(title = "Visualisasi Data", status = "primary", solidHeader = TRUE, width = 6,
-                    selectInput("plot_type", "Pilih Jenis Grafik:",
-                                choices = c("Histogram", "Boxplot", "Scatter Plot", "Bar Plot", "Peta")), # Added Map
+                                selectInput("plot_type", "Pilih Jenis Grafik:",
+                        choices = c("Histogram", "Boxplot", "Scatter Plot", "Bar Plot", "Peta", "Peta Jarak")), # Added Map and Distance Map
                     uiOutput("plot_vars_ui"),
                     actionButton("generate_plot", "Buat Grafik", class = "btn-primary"),
                     br(), br(),
@@ -593,7 +596,11 @@ ui <- dashboardPage(
                       leafletOutput("data_map")
                     ),
                     conditionalPanel(
-                      condition = "input.plot_type != 'Peta'",
+                      condition = "input.plot_type == 'Peta Jarak'",
+                      leafletOutput("distance_map")
+                    ),
+                    conditionalPanel(
+                      condition = "input.plot_type != 'Peta' && input.plot_type != 'Peta Jarak'",
                       plotOutput("data_plot")
                     ),
                     h4("Interpretasi Visualisasi:"),
@@ -782,6 +789,45 @@ server <- function(input, output, session) {
   # --- Data Reaktif ---
   data_r <- reactiveVal(NULL) # Untuk menyimpan data yang aktif (awal atau upload)
   
+  # Load distance data globally
+  distance_data <- reactive({
+    tryCatch({
+      dist_df <- read.csv("distance.csv", row.names = 1)
+      return(dist_df)
+    }, error = function(e) {
+      showNotification(paste("Error loading distance data:", e$message), type = "error")
+      return(NULL)
+    })
+  })
+  
+  # Function to convert distance matrix to coordinates using MDS
+  distance_to_coordinates <- function(dist_matrix, dimensions = 2) {
+    # Ensure the matrix is symmetric and has no negative values
+    dist_matrix[is.na(dist_matrix)] <- 0
+    
+    # Convert to distance object
+    if (!inherits(dist_matrix, "dist")) {
+      dist_matrix <- as.dist(dist_matrix)
+    }
+    
+    # Apply classical multidimensional scaling
+    mds_result <- cmdscale(dist_matrix, k = dimensions, eig = TRUE)
+    
+    # Extract coordinates
+    coordinates <- as.data.frame(mds_result$points)
+    colnames(coordinates) <- c("longitude", "latitude")
+    
+    # Add district codes as row names
+    coordinates$district_id <- as.numeric(rownames(coordinates))
+    
+    # Scale coordinates to a reasonable geographic range
+    # Normalize to approximately fit Indonesian archipelago bounds
+    coordinates$longitude <- scales::rescale(coordinates$longitude, to = c(95, 141))
+    coordinates$latitude <- scales::rescale(coordinates$latitude, to = c(-11, 6))
+    
+    return(coordinates)
+  }
+
   # Memuat data default saat aplikasi dimulai
   observeEvent(TRUE, {
     tryCatch({
@@ -868,6 +914,17 @@ server <- function(input, output, session) {
           selectInput("map_var_lat", "Kolom Latitude:", choices = numeric_cols),
           selectInput("map_var_lon", "Kolom Longitude:", choices = numeric_cols),
           selectInput("map_var_color", "Variabel Warna (Opsional):", choices = c("None", cols), selected = "None")
+        )
+      } else if (plot_type == "Peta Jarak") {
+        # Distance matrix visualization using MDS
+        tagList(
+          p("Visualisasi matriks jarak menggunakan Multidimensional Scaling (MDS) untuk mengkonversi data jarak menjadi koordinat geografis."),
+          p("Data jarak akan dikonversi menjadi koordinat 2D dan ditampilkan sebagai peta interaktif."),
+          selectInput("distance_color_var", "Variabel Warna untuk Titik (Opsional):", 
+                     choices = c("None", if(!is.null(current_data()) && nrow(current_data()) > 0) names(current_data()) else c()), 
+                     selected = "None"),
+          numericInput("distance_point_size", "Ukuran Titik:", value = 10, min = 1, max = 50),
+          checkboxInput("show_labels", "Tampilkan Label District:", value = TRUE)
         )
       }
     })
@@ -1459,6 +1516,137 @@ server <- function(input, output, session) {
         interpretasi <- paste0("Peta interaktif menunjukkan distribusi geografis data menggunakan kolom '", lat_col, "' dan '", lon_col, "'. ",
                                if (color_col != "None" && color_col %in% names(df)) paste0("Titik-titik diwarnai berdasarkan variabel '", color_col, "'.") else "Titik-titik menunjukkan lokasi data.")
       }
+    } else if (plot_type == "Peta Jarak") {
+      # Distance matrix visualization using MDS
+      req(distance_data())
+      
+      tryCatch({
+        # Get distance matrix
+        dist_matrix <- distance_data()
+        
+        # Convert distance matrix to coordinates using MDS
+        coordinates <- distance_to_coordinates(dist_matrix)
+        
+        # Get color variable if selected
+        color_var <- input$distance_color_var
+        point_size <- input$distance_point_size
+        show_labels <- input$show_labels
+        
+        # Initialize map
+        m <- leaflet(coordinates) %>%
+          addTiles() %>%
+          setView(lng = mean(coordinates$longitude), lat = mean(coordinates$latitude), zoom = 5)
+        
+        # Prepare data for visualization
+        map_data <- coordinates
+        
+        # Add SoVI data if available and color variable selected
+        if (color_var != "None" && !is.null(data_r()) && nrow(data_r()) > 0) {
+          sovi_df <- data_r()
+          if ("DISTRICTCODE" %in% names(sovi_df) && color_var %in% names(sovi_df)) {
+            # Match districts with coordinates
+            sovi_subset <- sovi_df[sovi_df$DISTRICTCODE %in% coordinates$district_id, ]
+            if (nrow(sovi_subset) > 0) {
+              # Merge color data
+              map_data <- merge(coordinates, sovi_subset[c("DISTRICTCODE", color_var)], 
+                              by.x = "district_id", by.y = "DISTRICTCODE", all.x = TRUE)
+              
+              # Create color palette
+              color_values <- map_data[[color_var]]
+              color_values <- color_values[!is.na(color_values)]
+              
+              if (length(color_values) > 0) {
+                if (is.numeric(color_values)) {
+                  pal <- colorNumeric("viridis", domain = color_values)
+                  m <- m %>%
+                    addCircleMarkers(lng = ~longitude, lat = ~latitude,
+                                   radius = point_size,
+                                   color = ~pal(get(color_var)),
+                                   fillOpacity = 0.8,
+                                   popup = ~paste("District:", district_id, 
+                                                "<br>Lat:", round(latitude, 4), 
+                                                "<br>Lon:", round(longitude, 4),
+                                                "<br>", color_var, ":", get(color_var))) %>%
+                    addLegend("bottomright", pal = pal, values = ~get(color_var), title = color_var)
+                } else {
+                  pal <- colorFactor("viridis", domain = color_values)
+                  m <- m %>%
+                    addCircleMarkers(lng = ~longitude, lat = ~latitude,
+                                   radius = point_size,
+                                   color = ~pal(get(color_var)),
+                                   fillOpacity = 0.8,
+                                   popup = ~paste("District:", district_id, 
+                                                "<br>Lat:", round(latitude, 4), 
+                                                "<br>Lon:", round(longitude, 4),
+                                                "<br>", color_var, ":", get(color_var))) %>%
+                    addLegend("bottomright", pal = pal, values = ~get(color_var), title = color_var)
+                }
+              } else {
+                # No valid color data, use default markers
+                m <- m %>%
+                  addCircleMarkers(lng = ~longitude, lat = ~latitude,
+                                 radius = point_size,
+                                 color = "blue",
+                                 fillOpacity = 0.8,
+                                 popup = ~paste("District:", district_id, 
+                                              "<br>Lat:", round(latitude, 4), 
+                                              "<br>Lon:", round(longitude, 4)))
+              }
+            } else {
+              # No matching districts found
+              m <- m %>%
+                addCircleMarkers(lng = ~longitude, lat = ~latitude,
+                               radius = point_size,
+                               color = "blue",
+                               fillOpacity = 0.8,
+                               popup = ~paste("District:", district_id, 
+                                            "<br>Lat:", round(latitude, 4), 
+                                            "<br>Lon:", round(longitude, 4)))
+            }
+          } else {
+            # Color variable not found, use default
+            m <- m %>%
+              addCircleMarkers(lng = ~longitude, lat = ~latitude,
+                             radius = point_size,
+                             color = "blue",
+                             fillOpacity = 0.8,
+                             popup = ~paste("District:", district_id, 
+                                          "<br>Lat:", round(latitude, 4), 
+                                          "<br>Lon:", round(longitude, 4)))
+          }
+        } else {
+          # No color variable selected
+          m <- m %>%
+            addCircleMarkers(lng = ~longitude, lat = ~latitude,
+                           radius = point_size,
+                           color = "blue",
+                           fillOpacity = 0.8,
+                           popup = ~paste("District:", district_id, 
+                                        "<br>Lat:", round(latitude, 4), 
+                                        "<br>Lon:", round(longitude, 4)))
+        }
+        
+        # Add labels if requested
+        if (show_labels) {
+          m <- m %>%
+            addLabelOnlyMarkers(lng = ~longitude, lat = ~latitude,
+                              label = ~as.character(district_id),
+                              labelOptions = labelOptions(noHide = TRUE, direction = "top", textOnly = TRUE))
+        }
+        
+        output$distance_map <- renderLeaflet({ m })
+        
+        interpretasi <- paste0("Peta jarak menampilkan visualisasi matriks jarak (", nrow(dist_matrix), "x", ncol(dist_matrix), 
+                               ") yang dikonversi menjadi koordinat 2D menggunakan Multidimensional Scaling (MDS). ",
+                               "Setiap titik merepresentasikan satu district, dengan jarak antar titik yang mencerminkan ",
+                               "similaritas dalam data asli. ",
+                               if (color_var != "None") paste0("Titik-titik diwarnai berdasarkan variabel '", color_var, "' dari data SoVI. ") else "",
+                               "Interpretasi: Titik-titik yang berdekatan memiliki karakteristik yang serupa, ",
+                               "sedangkan yang berjauhan memiliki karakteristik berbeda berdasarkan matriks jarak.")
+      }, error = function(e) {
+        interpretasi <- paste("Error dalam membuat peta jarak:", e$message)
+        showNotification(interpretasi, type = "error")
+      })
     }
     
     data_plot_obj(p) # Store ggplot object (will be NULL if map is generated)
@@ -1466,7 +1654,7 @@ server <- function(input, output, session) {
   })
   
   output$data_plot <- renderPlot({
-    req(input$plot_type != "Peta") # Only render ggplot if not a map
+    req(input$plot_type != "Peta" && input$plot_type != "Peta Jarak") # Only render ggplot if not a map
     req(data_plot_obj())
     data_plot_obj()
   })
@@ -1476,7 +1664,7 @@ server <- function(input, output, session) {
       paste("grafik_", input$plot_type, "_", Sys.Date(), ".jpg", sep="") # Changed to JPG
     },
     content = function(file) {
-      req(data_plot_obj())
+      req(data_plot_obj(), input$plot_type != "Peta", input$plot_type != "Peta Jarak")
       ggplot2::ggsave(file, plot = data_plot_obj(), device = "jpeg", width = 10, height = 7, units = "in", dpi = 300) # Changed to JPEG
     }
   )
