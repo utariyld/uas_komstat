@@ -468,6 +468,13 @@ ui <- dashboardPage(
       menuItem("📉 Regresi Linear", tabName = "regresi", icon = icon("chart-area")),
       hr(), # Garis pemisah
       div(style = "margin: 20px 15px; padding: 20px; background: linear-gradient(135deg, #D1FAE5 0%, #FCE7F3 100%); border-radius: 12px; border: 2px dashed #10B981;",
+          h4("📊 Dataset Default", style = "margin: 0 0 15px 0; color: #065F46; text-align: center; font-size: 16px;"),
+          selectInput("default_dataset", "Pilih Dataset Default:",
+                      choices = c("SoVI Data" = "sovi", "Distance Data" = "distance"),
+                      selected = "sovi"),
+          actionButton("load_default_data", "Muat Dataset Default", 
+                       class = "btn-success", style = "width: 100%; margin-bottom: 15px;"),
+          hr(style = "border-color: #10B981; margin: 15px 0;"),
           h4("📁 Upload Data", style = "margin: 0 0 15px 0; color: #065F46; text-align: center; font-size: 16px;"),
           fileInput("upload_file", NULL,
                     placeholder = "Pilih File CSV",
@@ -500,7 +507,8 @@ ui <- dashboardPage(
                           tags$li("📈 Eksplorasi Data Visual", style = "margin-bottom: 8px;"),
                           tags$li("🧪 Uji Asumsi Statistik", style = "margin-bottom: 8px;"),
                           tags$li("📉 Analisis Inferensial", style = "margin-bottom: 8px;"),
-                          tags$li("🔗 Regresi Linear Berganda", style = "margin-bottom: 8px;")
+                          tags$li("🔗 Regresi Linear Berganda", style = "margin-bottom: 8px;"),
+                          tags$li("📄 Download PDF & Word", style = "margin-bottom: 8px;")
                         )
                     )
                 ),
@@ -515,11 +523,11 @@ ui <- dashboardPage(
                 ),
                 box(title = "🚀 Panduan Cepat", status = "primary", solidHeader = TRUE, width = 4,
                     div(style = "padding: 10px;",
-                        p("1️⃣ Upload data CSV Anda", style = "margin-bottom: 8px;"),
+                        p("1️⃣ Pilih dataset default atau upload CSV", style = "margin-bottom: 8px;"),
                         p("2️⃣ Eksplorasi data di tab Eksplorasi", style = "margin-bottom: 8px;"),
-                        p("3️⃣ Jalankan uji asumsi", style = "margin-bottom: 8px;"),
+                        p("3️⃣ Jalankan uji asumsi statistik", style = "margin-bottom: 8px;"),
                         p("4️⃣ Lakukan analisis statistik", style = "margin-bottom: 8px;"),
-                        p("5️⃣ Download hasil analisis", style = "margin-bottom: 8px;")
+                        p("5️⃣ Download hasil dalam format PDF/Word", style = "margin-bottom: 8px;")
                     )
                 )
               ),
@@ -528,12 +536,12 @@ ui <- dashboardPage(
                     div(style = "padding: 15px;",
                         h4("Dataset Default:", style = "color: #EC4899; margin-bottom: 15px;"),
                         div(style = "background: linear-gradient(135deg, #D1FAE5 0%, #FCE7F3 100%); padding: 15px; border-radius: 12px; margin-bottom: 10px;",
-                            strong("📊 sovi_data.csv"), br(),
-                            span("Dataset utama untuk analisis statistik", style = "color: #6B7280; font-size: 14px;")
+                            strong("📊 SoVI Data"), br(),
+                            span("Dataset Social Vulnerability Index dengan 17 variabel sosio-ekonomi", style = "color: #6B7280; font-size: 14px;")
                         ),
                         div(style = "background: linear-gradient(135deg, #D1FAE5 0%, #FCE7F3 100%); padding: 15px; border-radius: 12px;",
-                            strong("📏 distance.csv"), br(),
-                            span("Dataset jarak untuk analisis spasial", style = "color: #6B7280; font-size: 14px;")
+                            strong("📏 Distance Data"), br(),
+                            span("Dataset matriks jarak dengan 511 variabel untuk analisis spasial", style = "color: #6B7280; font-size: 14px;")
                         )
                     )
                 ),
@@ -638,7 +646,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("normalitas_output"),
                     h4("Interpretasi Uji Normalitas:"),
                     verbatimTextOutput("interpretasi_normalitas"),
-                    downloadButton("download_normalitas", "Download Hasil Normalitas (PDF)", class = "btn-info")
+                    downloadButton("download_normalitas", "Download Hasil Normalitas (PDF)", class = "btn-info"),
+                    downloadButton("download_normalitas_word", "Download Hasil Normalitas (Word)", class = "btn-info")
                 ),
                 box(title = "Uji Homogenitas", status = "primary", solidHeader = TRUE, width = 6,
                     p("Uji ini menguji asumsi homogenitas varians antar kelompok menggunakan Levene's Test."),
@@ -649,7 +658,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("homogenitas_output"),
                     h4("Interpretasi Uji Homogenitas:"),
                     verbatimTextOutput("interpretasi_homogenitas"),
-                    downloadButton("download_homogenitas", "Download Hasil Homogenitas (PDF)", class = "btn-info")
+                    downloadButton("download_homogenitas", "Download Hasil Homogenitas (PDF)", class = "btn-info"),
+                    downloadButton("download_homogenitas_word", "Download Hasil Homogenitas (Word)", class = "btn-info")
                 )
               )
       ),
@@ -665,7 +675,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("t_test_1_output"),
                     h4("Interpretasi Uji Beda Rata-rata 1 Kelompok:"),
                     verbatimTextOutput("interpretasi_t_test_1"),
-                    downloadButton("download_t_test_1", "Download Hasil (PDF)", class = "btn-info")
+                    downloadButton("download_t_test_1", "Download Hasil (PDF)", class = "btn-info"),
+                    downloadButton("download_t_test_1_word", "Download Hasil (Word)", class = "btn-info")
                 ),
                 box(title = "Uji Beda Rata-rata 2 Kelompok", status = "primary", solidHeader = TRUE, width = 6,
                     selectInput("t_test_2_type", "Tipe Uji:", choices = c("Independen", "Berpasangan")),
@@ -676,7 +687,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("t_test_2_output"),
                     h4("Interpretasi Uji Beda Rata-rata 2 Kelompok:"),
                     verbatimTextOutput("interpretasi_t_test_2"),
-                    downloadButton("download_t_test_2", "Download Hasil (PDF)", class = "btn-info")
+                    downloadButton("download_t_test_2", "Download Hasil (PDF)", class = "btn-info"),
+                    downloadButton("download_t_test_2_word", "Download Hasil (Word)", class = "btn-info")
                 )
               )
       ),
@@ -692,7 +704,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("prop_test_1_output"),
                     h4("Interpretasi Uji Proporsi 1 Kelompok:"),
                     verbatimTextOutput("interpretasi_prop_test_1"),
-                    downloadButton("download_prop_test_1", "Download Hasil (PDF)", class = "btn-info")
+                    downloadButton("download_prop_test_1", "Download Hasil (PDF)", class = "btn-info"),
+                    downloadButton("download_prop_test_1_word", "Download Hasil (Word)", class = "btn-info")
                 ),
                 box(title = "Uji Proporsi 2 Kelompok", status = "primary", solidHeader = TRUE, width = 6,
                     uiOutput("var_prop_test_2_ui"),
@@ -701,7 +714,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("prop_test_2_output"),
                     h4("Interpretasi Uji Proporsi 2 Kelompok:"),
                     verbatimTextOutput("interpretasi_prop_test_2"),
-                    downloadButton("download_prop_test_2", "Download Hasil (PDF)", class = "btn-info")
+                    downloadButton("download_prop_test_2", "Download Hasil (PDF)", class = "btn-info"),
+                    downloadButton("download_prop_test_2_word", "Download Hasil (Word)", class = "btn-info")
                 )
               ),
               fluidRow(
@@ -713,7 +727,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("var_test_1_output"),
                     h4("Interpretasi Uji Varians 1 Kelompok:"),
                     verbatimTextOutput("interpretasi_var_test_1"),
-                    downloadButton("download_var_test_1", "Download Hasil (PDF)", class = "btn-info")
+                    downloadButton("download_var_test_1", "Download Hasil (PDF)", class = "btn-info"),
+                    downloadButton("download_var_test_1_word", "Download Hasil (Word)", class = "btn-info")
                 ),
                 box(title = "Uji Varians 2 Kelompok (F-test)", status = "primary", solidHeader = TRUE, width = 6,
                     uiOutput("var_var_test_2_ui"),
@@ -722,7 +737,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("var_test_2_output"),
                     h4("Interpretasi Uji Varians 2 Kelompok:"),
                     verbatimTextOutput("interpretasi_var_test_2"),
-                    downloadButton("download_var_test_2", "Download Hasil (PDF)", class = "btn-info")
+                    downloadButton("download_var_test_2", "Download Hasil (PDF)", class = "btn-info"),
+                    downloadButton("download_var_test_2_word", "Download Hasil (Word)", class = "btn-info")
                 )
               )
       ),
@@ -737,7 +753,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("anova_1_way_output"),
                     h4("Interpretasi ANOVA Satu Arah:"),
                     verbatimTextOutput("interpretasi_anova_1_way"),
-                    downloadButton("download_anova_1_way", "Download Hasil (PDF)", class = "btn-info")
+                    downloadButton("download_anova_1_way", "Download Hasil (PDF)", class = "btn-info"),
+                    downloadButton("download_anova_1_way_word", "Download Hasil (Word)", class = "btn-info")
                 ),
                 box(title = "ANOVA Dua Arah", status = "primary", solidHeader = TRUE, width = 6,
                     uiOutput("anova_2_way_ui"),
@@ -746,7 +763,8 @@ ui <- dashboardPage(
                     verbatimTextOutput("anova_2_way_output"),
                     h4("Interpretasi ANOVA Dua Arah:"),
                     verbatimTextOutput("interpretasi_anova_2_way"),
-                    downloadButton("download_anova_2_way", "Download Hasil (PDF)", class = "btn-info")
+                    downloadButton("download_anova_2_way", "Download Hasil (PDF)", class = "btn-info"),
+                    downloadButton("download_anova_2_way_word", "Download Hasil (Word)", class = "btn-info")
                 )
               )
       ),
@@ -799,8 +817,7 @@ server <- function(input, output, session) {
   # Memuat data default saat aplikasi dimulai
   observeEvent(TRUE, {
     tryCatch({
-      # Load default data
-      # Pastikan 'sovi_data.csv' ada di direktori kerja aplikasi Shiny
+      # Load default data (SoVI by default)
       sovi_data <- read.csv("sovi_data.csv")
       data_r(sovi_data)
       showNotification("Data 'sovi_data.csv' dimuat sebagai default.", type = "message")
@@ -809,6 +826,25 @@ server <- function(input, output, session) {
       data_r(NULL) # Reset data jika ada error
     })
   }, once = TRUE) # Hanya dijalankan sekali saat inisialisasi
+  
+  # Observer untuk memuat dataset default yang dipilih
+  observeEvent(input$load_default_data, {
+    req(input$default_dataset)
+    tryCatch({
+      if (input$default_dataset == "sovi") {
+        df <- read.csv("sovi_data.csv")
+        data_r(df)
+        showNotification("Dataset SoVI Data berhasil dimuat!", type = "success")
+      } else if (input$default_dataset == "distance") {
+        df <- read.csv("distance.csv")
+        data_r(df)
+        showNotification("Dataset Distance Data berhasil dimuat!", type = "success")
+      }
+    }, error = function(e) {
+      showNotification(paste("Error loading dataset:", e$message), type = "error")
+      data_r(NULL) # Reset data jika ada error
+    })
+  })
   
   # Observer untuk mengunggah data baru
   observeEvent(input$upload_file, {
@@ -1457,6 +1493,16 @@ server <- function(input, output, session) {
     }
   )
   
+  output$download_normalitas_word <- downloadHandler(
+    filename = function() { paste("uji_normalitas_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
+                    content_func = reactive(normalitas_test_output),
+                    interpretation_func = reactive(interpretasi_normalitas_text),
+                    title = paste("Hasil Uji Normalitas untuk", input$norm_var))
+    }
+  )
+  
   # --- Uji Asumsi Server (Homogenitas) ---
   homogenitas_test_output <- reactiveVal(NULL)
   interpretasi_homogenitas_text <- reactiveVal("")
@@ -1520,6 +1566,16 @@ server <- function(input, output, session) {
     }
   )
   
+  output$download_homogenitas_word <- downloadHandler(
+    filename = function() { paste("uji_homogenitas_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
+                    content_func = reactive(homogenitas_test_output),
+                    interpretation_func = reactive(interpretasi_homogenitas_text),
+                    title = paste("Hasil Uji Homogenitas untuk", input$homo_var_response))
+    }
+  )
+  
   
   # --- Uji Beda Rata-rata Server (t-test 1 Kelompok) ---
   t_test_1_output_val <- reactiveVal(NULL)
@@ -1564,6 +1620,16 @@ server <- function(input, output, session) {
     filename = function() { paste("uji_t_1_kelompok_", Sys.Date(), ".pdf", sep="") },
     content = function(file) {
       render_report(file, "pdf_document",
+                    content_func = reactive(t_test_1_output_val),
+                    interpretation_func = reactive(interpretasi_t_test_1_text),
+                    title = paste("Hasil Uji T 1 Kelompok untuk", input$t_test_1_var))
+    }
+  )
+  
+  output$download_t_test_1_word <- downloadHandler(
+    filename = function() { paste("uji_t_1_kelompok_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
                     content_func = reactive(t_test_1_output_val),
                     interpretation_func = reactive(interpretasi_t_test_1_text),
                     title = paste("Hasil Uji T 1 Kelompok untuk", input$t_test_1_var))
@@ -1639,6 +1705,16 @@ server <- function(input, output, session) {
     }
   )
   
+  output$download_t_test_2_word <- downloadHandler(
+    filename = function() { paste("uji_t_2_kelompok_", input$t_test_2_type, "_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
+                    content_func = reactive(t_test_2_output_val),
+                    interpretation_func = reactive(interpretasi_t_test_2_text),
+                    title = paste("Hasil Uji T 2 Kelompok (", input$t_test_2_type, ")"))
+    }
+  )
+  
   
   # --- Uji Proporsi & Varians Server ---
   # Proporsi 1 Kelompok
@@ -1703,6 +1779,16 @@ server <- function(input, output, session) {
     }
   )
   
+  output$download_prop_test_1_word <- downloadHandler(
+    filename = function() { paste("uji_proporsi_1_kelompok_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
+                    content_func = reactive(prop_test_1_output_val),
+                    interpretation_func = reactive(interpretasi_prop_test_1_text),
+                    title = paste("Hasil Uji Proporsi 1 Kelompok untuk", input$prop_test_1_var))
+    }
+  )
+  
   # Proporsi 2 Kelompok
   prop_test_2_output_val <- reactiveVal(NULL)
   interpretasi_prop_test_2_text <- reactiveVal("")
@@ -1754,6 +1840,16 @@ server <- function(input, output, session) {
     filename = function() { paste("uji_proporsi_2_kelompok_", Sys.Date(), ".pdf", sep="") },
     content = function(file) {
       render_report(file, "pdf_document",
+                    content_func = reactive(prop_test_2_output_val),
+                    interpretation_func = reactive(interpretasi_prop_test_2_text),
+                    title = paste("Hasil Uji Proporsi 2 Kelompok untuk", input$prop_test_2_var_cat))
+    }
+  )
+  
+  output$download_prop_test_2_word <- downloadHandler(
+    filename = function() { paste("uji_proporsi_2_kelompok_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
                     content_func = reactive(prop_test_2_output_val),
                     interpretation_func = reactive(interpretasi_prop_test_2_text),
                     title = paste("Hasil Uji Proporsi 2 Kelompok untuk", input$prop_test_2_var_cat))
@@ -1832,6 +1928,16 @@ server <- function(input, output, session) {
     }
   )
   
+  output$download_var_test_1_word <- downloadHandler(
+    filename = function() { paste("uji_varians_1_kelompok_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
+                    content_func = reactive(var_test_1_output_val),
+                    interpretation_func = reactive(interpretasi_var_test_1_text),
+                    title = paste("Hasil Uji Varians 1 Kelompok untuk", input$var_test_1_var))
+    }
+  )
+  
   
   # Varians 2 Kelompok
   var_test_2_output_val <- reactiveVal(NULL)
@@ -1876,6 +1982,16 @@ server <- function(input, output, session) {
     filename = function() { paste("uji_varians_2_kelompok_", Sys.Date(), ".pdf", sep="") },
     content = function(file) {
       render_report(file, "pdf_document",
+                    content_func = reactive(var_test_2_output_val),
+                    interpretation_func = reactive(interpretasi_var_test_2_text),
+                    title = paste("Hasil Uji Varians 2 Kelompok untuk", input$var_test_2_var_response))
+    }
+  )
+  
+  output$download_var_test_2_word <- downloadHandler(
+    filename = function() { paste("uji_varians_2_kelompok_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
                     content_func = reactive(var_test_2_output_val),
                     interpretation_func = reactive(interpretasi_var_test_2_text),
                     title = paste("Hasil Uji Varians 2 Kelompok untuk", input$var_test_2_var_response))
@@ -1935,6 +2051,16 @@ server <- function(input, output, session) {
     filename = function() { paste("anova_1_arah_", Sys.Date(), ".pdf", sep="") },
     content = function(file) {
       render_report(file, "pdf_document",
+                    content_func = reactive(anova_1_way_output_val),
+                    interpretation_func = reactive(interpretasi_anova_1_way_text),
+                    title = paste("Hasil ANOVA Satu Arah untuk", input$anova_1_resp))
+    }
+  )
+  
+  output$download_anova_1_way_word <- downloadHandler(
+    filename = function() { paste("anova_1_arah_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
                     content_func = reactive(anova_1_way_output_val),
                     interpretation_func = reactive(interpretasi_anova_1_way_text),
                     title = paste("Hasil ANOVA Satu Arah untuk", input$anova_1_resp))
@@ -2012,6 +2138,16 @@ server <- function(input, output, session) {
     filename = function() { paste("anova_2_arah_", Sys.Date(), ".pdf", sep="") },
     content = function(file) {
       render_report(file, "pdf_document",
+                    content_func = reactive(anova_2_way_output_val),
+                    interpretation_func = reactive(interpretasi_anova_2_way_text),
+                    title = paste("Hasil ANOVA Dua Arah untuk", input$anova_2_resp))
+    }
+  )
+  
+  output$download_anova_2_way_word <- downloadHandler(
+    filename = function() { paste("anova_2_arah_", Sys.Date(), ".docx", sep="") },
+    content = function(file) {
+      render_report(file, "word_document",
                     content_func = reactive(anova_2_way_output_val),
                     interpretation_func = reactive(interpretasi_anova_2_way_text),
                     title = paste("Hasil ANOVA Dua Arah untuk", input$anova_2_resp))
