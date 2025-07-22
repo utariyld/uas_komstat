@@ -1,4 +1,4 @@
-# install.packages(c("shiny", "shinydashboard", "ggplot2", "dplyr", "psych", "car", "DT", "knitr", "rmarkdown", "tseries", "lmtest", "leaflet", "officer", "flextable"))
+# install.packages(c("shiny", "shinydashboard", "ggplot2", "dplyr", "psych", "car", "DT", "knitr", "rmarkdown", "tseries", "lmtest", "leaflet"))
 
 library(shiny)
 library(shinydashboard)
@@ -13,8 +13,6 @@ library(tseries) # Untuk uji Jarque-Bera (normalitas)
 library(lmtest) # Untuk uji Durbin-Watson (autokorelasi)
 library(leaflet) # Untuk visualisasi peta
 library(tinytex)
-library(officer) # Untuk membuat dokumen Word
-library(flextable) # Untuk tabel dalam dokumen Word
 
 # --- CSS Kustom dengan Tema Pink & Hijau Modern ---
 custom_css <- "
@@ -450,7 +448,7 @@ custom_css <- "
 "
 
 ui <- dashboardPage(
-  dashboardHeader(title = "✨ LiteraNusa Analytics",
+  dashboardHeader(title = "✨ NusaAnalytics",
                   titleWidth = 280,
                   tags$li(class = "dropdown",
                           tags$style(HTML(custom_css)) # Memanggil CSS di sini
@@ -458,28 +456,17 @@ ui <- dashboardPage(
   dashboardSidebar(
     width = 280, # Menyesuaikan lebar sidebar untuk mencegah pemotongan
     sidebarMenu(
-      menuItem("🏠 Beranda", tabName = "beranda", icon = icon("home")),
-      menuItem("📋 Metadata Data", tabName = "metadata", icon = icon("info-circle")), # New: Metadata Tab
-      menuItem("🔧 Manajemen Data", tabName = "manajemen_data", icon = icon("database")),
-      menuItem("📊 Eksplorasi Data", tabName = "eksplorasi", icon = icon("chart-line")),
-      menuItem("🧪 Uji Asumsi", tabName = "uji_asumsi", icon = icon("flask")),
-      menuItem("📈 Statistik Inferensial", icon = icon("calculator"),
-               menuSubItem("🔍 Uji Beda Rata-rata", tabName = "uji_rata_rata"),
-               menuSubItem("📊 Uji Proporsi & Varians", tabName = "uji_prop_var")),
-      menuItem("⚖️ ANOVA", tabName = "anova", icon = icon("balance-scale")),
-      menuItem("📉 Regresi Linear", tabName = "regresi", icon = icon("chart-area")),
-      hr(), # Garis pemisah
-      div(style = "margin: 20px 15px; padding: 20px; background: linear-gradient(135deg, #D1FAE5 0%, #FCE7F3 100%); border-radius: 12px; border: 2px dashed #10B981;",
-          h4("📊 Dataset Tersedia", style = "margin: 0 0 15px 0; color: #065F46; text-align: center; font-size: 16px;"),
-          selectInput("default_dataset", "Pilih Dataset:",
-                      choices = c("SoVI Data" = "sovi", "Distance Data" = "distance"),
-                      selected = "sovi"),
-          actionButton("load_default_data", "Muat Dataset", 
-                       class = "btn-success", style = "width: 100%; margin-bottom: 15px;"),
-          div(style = "text-align: center; margin-top: 10px; padding: 10px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;",
-              p("📋 Hanya dataset yang tersedia di sistem yang dapat digunakan", 
-                style = "margin: 0; font-size: 12px; color: #065F46; font-style: italic;"))
-      )
+      menuItem("Beranda", tabName = "beranda", icon = icon("home")),
+      menuItem("Metadata Data", tabName = "metadata", icon = icon("info-circle")), # New: Metadata Tab
+      menuItem("Manajemen Data", tabName = "manajemen_data", icon = icon("database")),
+      menuItem("Eksplorasi Data", tabName = "eksplorasi", icon = icon("chart-line")),
+      menuItem("Uji Asumsi", tabName = "uji_asumsi", icon = icon("flask")),
+      menuItem("Statistik Inferensial", icon = icon("calculator"),
+               menuSubItem("Uji Beda Rata-rata", tabName = "uji_rata_rata"),
+               menuSubItem("Uji Proporsi & Varians", tabName = "uji_prop_var")),
+      menuItem("ANOVA", tabName = "anova", icon = icon("balance-scale")),
+      menuItem("Regresi Linear", tabName = "regresi", icon = icon("chart-area"))
+      
     )
   ),
   dashboardBody(
@@ -487,92 +474,77 @@ ui <- dashboardPage(
       # --- Beranda ---
       tabItem(tabName = "beranda",
               fluidRow(
-                box(title = "🎯 Selamat Datang di LiteraNusa Analytics", status = "primary", solidHeader = TRUE, width = 12,
+                box(title = "🎯 Selamat Datang di NusaAnalytics", status = "primary", solidHeader = TRUE, width = 12,
                     div(style = "text-align: center; padding: 20px;",
-                        h3("Platform Analisis Data Statistik Modern", style = "color: #065F46; margin-bottom: 20px;"),
-                        p("Dashboard canggih untuk analisis data komprehensif dengan antarmuka yang intuitif dan visualisasi yang menarik", 
+                        h3("Platform Analisis Data Statistik Sosial & Spasial", style = "color: #065F46; margin-bottom: 20px;"),
+                        p("Dashboard interaktif untuk analisis kerentanan sosial di Indonesia menggunakan data statistik resmi dan visualisasi yang informatif.", 
                           style = "font-size: 16px; color: #6B7280; margin-bottom: 30px;")
-                    )
-                )
-              ),
-              fluidRow(
-                box(title = "📊 Fitur Utama", status = "primary", solidHeader = TRUE, width = 4,
-                    div(style = "padding: 10px;",
-                        tags$ul(
-                          tags$li("📁 Manajemen Data Interaktif", style = "margin-bottom: 8px;"),
-                          tags$li("📈 Eksplorasi Data Visual", style = "margin-bottom: 8px;"),
-                          tags$li("🧪 Uji Asumsi Statistik", style = "margin-bottom: 8px;"),
-                          tags$li("📉 Analisis Inferensial", style = "margin-bottom: 8px;"),
-                          tags$li("🔗 Regresi Linear Berganda", style = "margin-bottom: 8px;"),
-                          tags$li("📄 Download PDF & Word", style = "margin-bottom: 8px;")
-                        )
-                    )
-                ),
-                box(title = "🛠️ Teknologi", status = "primary", solidHeader = TRUE, width = 4,
-                    div(style = "padding: 10px;",
-                        p("🔧 Framework: R Shiny", style = "margin-bottom: 8px;"),
-                        p("📦 Paket Statistik: psych, car, DT", style = "margin-bottom: 8px;"),
-                        p("📊 Visualisasi: ggplot2", style = "margin-bottom: 8px;"),
-                        p("🎨 UI: shinydashboard", style = "margin-bottom: 8px;"),
-                        p("✨ Design: Modern CSS3", style = "margin-bottom: 8px;")
-                    )
-                ),
-                box(title = "🚀 Panduan Cepat", status = "primary", solidHeader = TRUE, width = 4,
-                    div(style = "padding: 10px;",
-                        p("1️⃣ Pilih dataset yang tersedia di sistem", style = "margin-bottom: 8px;"),
-                        p("2️⃣ Eksplorasi data di tab Eksplorasi", style = "margin-bottom: 8px;"),
-                        p("3️⃣ Jalankan uji asumsi statistik", style = "margin-bottom: 8px;"),
-                        p("4️⃣ Lakukan analisis statistik", style = "margin-bottom: 8px;"),
-                        p("5️⃣ Download hasil dalam format PDF/Word", style = "margin-bottom: 8px;")
                     )
                 )
               ),
               fluidRow(
                 box(title = "📋 Data Tersedia", status = "primary", solidHeader = TRUE, width = 6,
                     div(style = "padding: 15px;",
-                        h4("Dataset Default:", style = "color: #EC4899; margin-bottom: 15px;"),
+                        h4("Dataset Bawaan:", style = "color: #EC4899; margin-bottom: 15px;"),
                         div(style = "background: linear-gradient(135deg, #D1FAE5 0%, #FCE7F3 100%); padding: 15px; border-radius: 12px; margin-bottom: 10px;",
                             strong("📊 SoVI Data"), br(),
-                            span("Dataset Social Vulnerability Index dengan 17 variabel sosio-ekonomi", style = "color: #6B7280; font-size: 14px;")
+                            span("Data Social Vulnerability Index dengan 17 variabel sosio-ekonomi dari SUSENAS dan proyeksi penduduk BPS.", style = "color: #6B7280; font-size: 14px;")
                         ),
                         div(style = "background: linear-gradient(135deg, #D1FAE5 0%, #FCE7F3 100%); padding: 15px; border-radius: 12px;",
                             strong("📏 Distance Data"), br(),
-                            span("Dataset matriks jarak dengan 511 variabel untuk analisis spasial", style = "color: #6B7280; font-size: 14px;")
-                        )
+                            span("Matriks jarak antar 511 kabupaten/kota di Indonesia untuk mendukung analisis spasial.", style = "color: #6B7280; font-size: 14px;")
+                        ),
+                        
+                        # --- Tambahkan bagian ini untuk pilihan dataset ---
+                        tags$hr(), # Garis pemisah
+                        h4("Pilih Dataset Aktif:", style = "color: #065F46; margin-bottom: 15px;"),
+                        selectInput("default_dataset", "Pilih Dataset:",
+                                    choices = c("SoVI Data" = "sovi",
+                                                "Distance Data" = "distance"),
+                                    selected = "sovi"), # Default terpilih SoVI
+                        actionButton("load_default_data", "Muat Dataset Terpilih", class = "btn-primary")
+                        # --- Akhir bagian tambahan ---
                     )
                 ),
-                box(title = "💡 Tips Penggunaan", status = "primary", solidHeader = TRUE, width = 6,
+                box(title = "📊 Fitur Utama", status = "primary", solidHeader = TRUE, width = 6,
                     div(style = "padding: 15px;",
                         div(style = "background: linear-gradient(135deg, #FCE7F3 0%, #D1FAE5 100%); padding: 15px; border-radius: 12px; margin-bottom: 10px;",
-                            strong("🔒 Keamanan Data"), br(),
-                            span("Sistem menggunakan dataset terverifikasi untuk keamanan dan konsistensi", style = "color: #6B7280; font-size: 14px;")
+                            strong("📁 Manajemen Data Terintegrasi"), br(),
+                            span("Pemrosesan dan kategorisasi variabel serta penanganan data hilang dari dataset bawaan.", style = "color: #6B7280; font-size: 14px;")
                         ),
                         div(style = "background: linear-gradient(135deg, #FCE7F3 0%, #D1FAE5 100%); padding: 15px; border-radius: 12px; margin-bottom: 10px;",
-                            strong("📈 Visualisasi"), br(),
-                            span("Pilih jenis grafik yang sesuai dengan tipe data", style = "color: #6B7280; font-size: 14px;")
+                            strong("📈 Eksplorasi Data Visual"), br(),
+                            span("Visualisasi data menggunakan histogram, boxplot, scatter plot, bar plot, dan peta interaktif.", style = "color: #6B7280; font-size: 14px;")
+                        ),
+                        div(style = "background: linear-gradient(135deg, #FCE7F3 0%, #D1FAE5 100%); padding: 15px; border-radius: 12px; margin-bottom: 10px;",
+                            strong("🧪 Uji Asumsi Statistik"), br(),
+                            span("Uji normalitas (Jarque-Bera) dan homogenitas varians (Levene) untuk validasi sebelum analisis lanjutan.", style = "color: #6B7280; font-size: 14px;")
+                        ),
+                        div(style = "background: linear-gradient(135deg, #FCE7F3 0%, #D1FAE5 100%); padding: 15px; border-radius: 12px; margin-bottom: 10px;",
+                            strong("📉 Analisis Inferensial"), br(),
+                            span("Uji-t, uji proporsi, uji varians, dan ANOVA satu dan dua arah untuk melihat perbedaan kelompok.", style = "color: #6B7280; font-size: 14px;")
                         ),
                         div(style = "background: linear-gradient(135deg, #FCE7F3 0%, #D1FAE5 100%); padding: 15px; border-radius: 12px;",
-                            strong("📊 Interpretasi"), br(),
-                            span("Perhatikan interpretasi otomatis untuk setiap analisis", style = "color: #6B7280; font-size: 14px;")
+                            strong("🔗 Regresi Linear Berganda"), br(),
+                            span("Analisis hubungan multivariat lengkap dengan pengujian asumsi residual: normalitas, multikolinearitas (VIF), homoskedastisitas, dan autokorelasi (Durbin-Watson).", style = "color: #6B7280; font-size: 14px;")
                         )
                     )
                 )
               )
       ),
       
-      # --- Metadata Data (NEW TAB) ---
+      
+      # --- Metadata Data ---
       tabItem(tabName = "metadata",
               fluidRow(
-                box(title = "Metadata Data Aktif", status = "primary", solidHeader = TRUE, width = 12,
-                    p("Ringkasan informasi mengenai dataset yang saat ini dimuat."),
-                    h4("Struktur Data (`str()`):"),
-                    verbatimTextOutput("metadata_str"),
-                    h4("Ringkasan Statistik (`summary()`):"),
-                    verbatimTextOutput("metadata_summary"),
+                box(title = "📝 Informasi Metadata Data Aktif", status = "primary", solidHeader = TRUE, width = 12,
+                    p("Bagian ini menampilkan ringkasan detail mengenai dataset yang saat ini Anda gunakan di NusaAnalytics. Memahami metadata sangat penting untuk memastikan data Anda siap untuk analisis lebih lanjut."),
                     h4("Detail Kolom:"),
+                    p("Tabel interaktif ini memberikan informasi rinci per kolom, termasuk nama kolom, tipe data, dan penjelasan mengenai variabel. Informasi ini krusial dalam pemahaman data."),
                     DTOutput("column_details_table"),
-                    h4("Catatan:"),
-                    p("Ini adalah metadata dasar. Untuk detail lebih lanjut, Anda dapat menggunakan menu 'Eksplorasi Data'.")
+                    
+                    h4("Catatan Penting:"),
+                    p("Metadata ini adalah langkah awal untuk memahami data Anda. Untuk eksplorasi lebih mendalam seperti distribusi variabel, korelasi, atau visualisasi lanjutan, silakan kunjungi menu 'Eksplorasi Data'.")
                 )
               )
       ),
@@ -581,7 +553,6 @@ ui <- dashboardPage(
       tabItem(tabName = "manajemen_data",
               fluidRow(
                 box(title = "Manajemen Data", status = "primary", solidHeader = TRUE, width = 12,
-                    p("Di sini Anda dapat melakukan pra-pemrosesan data, seperti mengkategorikan variabel kontinu, menangani nilai hilang, dll."),
                     uiOutput("var_categorize_ui"), # UI untuk memilih variabel yang akan dikategorikan
                     selectInput("cat_method", "Metode Kategorisasi:",
                                 choices = c("Lebar Interval Sama" = "equal_width",
@@ -800,6 +771,7 @@ ui <- dashboardPage(
                     downloadButton("download_regresi_word", "Download Hasil Regresi (Word)", class = "btn-info") # Added Word
                 )
               )
+              
       )
     )
   )
@@ -823,7 +795,7 @@ server <- function(input, output, session) {
     })
   }, once = TRUE) # Hanya dijalankan sekali saat inisialisasi
   
-  # Observer untuk memuat dataset yang dipilih
+  # Observer untuk memuat dataset default yang dipilih
   observeEvent(input$load_default_data, {
     req(input$default_dataset)
     tryCatch({
@@ -832,13 +804,25 @@ server <- function(input, output, session) {
         data_r(df)
         showNotification("Dataset SoVI Data berhasil dimuat!", type = "success")
       } else if (input$default_dataset == "distance") {
-        # Membaca distance.csv dengan penanganan khusus karena ukurannya besar
-        df <- read.csv("distance.csv", header = TRUE, stringsAsFactors = FALSE)
+        df <- read.csv("distance.csv")
         data_r(df)
         showNotification("Dataset Distance Data berhasil dimuat!", type = "success")
       }
     }, error = function(e) {
       showNotification(paste("Error loading dataset:", e$message), type = "error")
+      data_r(NULL) # Reset data jika ada error
+    })
+  })
+  
+  # Observer untuk mengunggah data baru
+  observeEvent(input$upload_file, {
+    req(input$upload_file)
+    tryCatch({
+      df <- read.csv(input$upload_file$datapath, header = input$header)
+      data_r(df)
+      showNotification("Data berhasil diunggah!", type = "success")
+    }, error = function(e) {
+      showNotification(paste("Error membaca file:", e$message), type = "error")
       data_r(NULL) # Reset data jika ada error
     })
   })
@@ -1084,39 +1068,118 @@ server <- function(input, output, session) {
     })
   })
   
-  # --- Metadata Data Server (NEW) ---
+  # --- Metadata Data Server ---
+  current_dataset_name_r <- reactiveVal("Belum ada dataset dimuat")
+  
+  # Modifikasi bagian memuat data default
+  observeEvent(TRUE, {
+    tryCatch({
+      # Load default data (SoVI by default)
+      sovi_data <- read.csv("sovi_data.csv")
+      data_r(sovi_data)
+      current_dataset_name_r("SoVI Data (Default)") # Update nama dataset
+      showNotification("Data 'sovi_data.csv' dimuat sebagai default.", type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error loading default data (sovi_data.csv):", e$message), type = "error")
+      data_r(NULL) # Reset data jika ada error
+      current_dataset_name_r("Error memuat dataset default") # Update nama dataset
+    })
+  }, once = TRUE)
+  
+  # Modifikasi observer untuk memuat dataset default yang dipilih
+  observeEvent(input$load_default_data, {
+    req(input$default_dataset)
+    tryCatch({
+      if (input$default_dataset == "sovi") {
+        df <- read.csv("sovi_data.csv")
+        data_r(df)
+        current_dataset_name_r("SoVI Data") # Update nama dataset
+        showNotification("Dataset SoVI Data berhasil dimuat!", type = "success")
+      } else if (input$default_dataset == "distance") {
+        df <- read.csv("distance.csv")
+        data_r(df)
+        current_dataset_name_r("Distance Data") # Update nama dataset
+        showNotification("Dataset Distance Data berhasil dimuat!", type = "success")
+      }
+    }, error = function(e) {
+      showNotification(paste("Error loading dataset:", e$message), type = "error")
+      data_r(NULL) # Reset data jika ada error
+      current_dataset_name_r(paste("Error memuat", input$default_dataset)) # Update nama dataset
+    })
+  })
+  
+  # Modifikasi observer untuk mengunggah data baru
+  observeEvent(input$upload_file, {
+    req(input$upload_file)
+    tryCatch({
+      df <- read.csv(input$upload_file$datapath, header = input$header)
+      data_r(df)
+      current_dataset_name_r(input$upload_file$name) # Update nama dataset dengan nama file yang diunggah
+      showNotification("Data berhasil diunggah!", type = "success")
+    }, error = function(e) {
+      showNotification(paste("Error membaca file:", e$message), type = "error")
+      data_r(NULL) # Reset data jika ada error
+      current_dataset_name_r("Error mengunggah file") # Update nama dataset
+    })
+  })
+  
+  # Tambahkan output untuk menampilkan nama dataset aktif di UI
+  output$active_dataset_name <- renderText({
+    current_dataset_name_r()
+  })
+  
+  # Pastikan output metadata lainnya tetap berfungsi dengan `current_data()`
   output$metadata_str <- renderPrint({
-    req(data_r())
+    req(data_r()) # Menggunakan data_r() sebagai ganti current_data() jika data_r adalah reactiveVal utama
     str(data_r())
   })
   
   output$metadata_summary <- renderPrint({
-    req(data_r())
+    req(data_r()) # Menggunakan data_r()
     summary(data_r())
   })
   
   output$column_details_table <- renderDT({
-    req(data_r())
+    req(data_r())  # Pastikan data tersedia
     df <- data_r()
-    col_names <- names(df)
-    col_types <- sapply(df, class)
-    col_unique_values_sample <- sapply(df, function(x) {
-      if (length(unique(x)) > 5) {
-        paste(head(unique(x), 5), collapse = ", ")
-      } else {
-        paste(unique(x), collapse = ", ")
-      }
-    })
     
-    metadata_df <- data.frame(
-      "Nama Kolom" = col_names,
-      "Tipe Data" = col_types,
-      "Contoh Nilai Unik" = col_unique_values_sample,
-      check.names = FALSE
+    # Buat vektor deskripsi manual (harus sesuai urutan dan jumlah kolom df)
+    deskripsi <- c(
+      "Kode wilayah/kabupaten",
+      "Persentase penduduk usia di bawah 5 tahun",
+      "Persentase penduduk perempuan",
+      "Persentase penduduk usia 65 tahun ke atas",
+      "Persentase rumah tangga dengan kepala keluarga perempuan",
+      "Rata-rata jumlah anggota rumah tangga",
+      "Persentase rumah tangga tanpa listrik",
+      "Persentase penduduk usia 15 tahun ke atas dengan pendidikan rendah",
+      "Persentase pertumbuhan jumlah penduduk",
+      "Persentase penduduk miskin",
+      "Persentase penduduk yang tidak bisa membaca dan menulis",
+      "Persentase rumah tangga yang tidak pernah mengikuti pelatihan bencana",
+      "Persentase rumah tangga di daerah rawan bencana",
+      "Persentase rumah tangga yang menyewa rumah",
+      "Persentase rumah tangga tanpa saluran pembuangan",
+      "Persentase rumah tangga dengan akses air ledeng",
+      "Jumlah total penduduk"
     )
     
-    DT::datatable(metadata_df, options = list(pageLength = 10, scrollX = TRUE))
+    # Pastikan panjang deskripsi sesuai jumlah kolom
+    if (length(deskripsi) != ncol(df)) {
+      deskripsi <- rep(NA, ncol(df))  # atau tampilkan pesan kesalahan jika perlu
+    }
+    
+    # Buat data frame untuk tampilan metadata
+    col_details <- data.frame(
+      "Nama Kolom" = names(df),
+      "Tipe Data" = sapply(df, class),
+      "Deskripsi" = deskripsi,
+      stringsAsFactors = FALSE
+    )
+    
+    datatable(col_details, options = list(pageLength = 10, scrollX = TRUE))
   })
+  
   
   # --- Manajemen Data Server ---
   managed_data <- reactiveVal(NULL) # Data yang sudah dimanipulasi
@@ -1167,10 +1230,6 @@ server <- function(input, output, session) {
   # Pratinjau data: gunakan data_r() jika managed_data() belum ada, sebaliknya gunakan managed_data()
   output$managed_data_preview <- renderDT({
     req(current_data())
-    DT::datatable(current_data(), 
-                  options = list(pageLength = 10, scrollX = TRUE, dom = 'Blfrtip', 
-                                 buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), # Add Buttons
-                  extensions = 'Buttons') # Enable Buttons extension
   })
   
   output$download_managed_data <- downloadHandler(
@@ -1254,10 +1313,7 @@ server <- function(input, output, session) {
     
     if (!is.null(interpretation_func)) {
       interpretation_output <- interpretation_func()
-      # Ini sudah diperbaiki di langkah sebelumnya, biarkan saja
-      # if (is.reactive(interpretation_output)) { # If it's a reactive expression, evaluate it
-      #   interpretation_output <- interpretation_output()
-      # }
+      
       report_content <- c(report_content,
                           "### Interpretasi:",
                           "",
