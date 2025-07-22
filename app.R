@@ -1,4 +1,4 @@
-# install.packages(c("shiny", "shinydashboard", "ggplot2", "dplyr", "psych", "car", "DT", "knitr", "rmarkdown", "tseries", "lmtest", "leaflet"))
+# install.packages(c("shiny", "shinydashboard", "ggplot2", "dplyr", "psych", "car", "DT", "knitr", "rmarkdown", "tseries", "lmtest", "leaflet", "officer", "flextable"))
 
 library(shiny)
 library(shinydashboard)
@@ -13,6 +13,8 @@ library(tseries) # Untuk uji Jarque-Bera (normalitas)
 library(lmtest) # Untuk uji Durbin-Watson (autokorelasi)
 library(leaflet) # Untuk visualisasi peta
 library(tinytex)
+library(officer) # Untuk membuat dokumen Word
+library(flextable) # Untuk tabel dalam dokumen Word
 
 # --- CSS Kustom dengan Tema Pink & Hijau Modern ---
 custom_css <- "
@@ -468,21 +470,15 @@ ui <- dashboardPage(
       menuItem("📉 Regresi Linear", tabName = "regresi", icon = icon("chart-area")),
       hr(), # Garis pemisah
       div(style = "margin: 20px 15px; padding: 20px; background: linear-gradient(135deg, #D1FAE5 0%, #FCE7F3 100%); border-radius: 12px; border: 2px dashed #10B981;",
-          h4("📊 Dataset Default", style = "margin: 0 0 15px 0; color: #065F46; text-align: center; font-size: 16px;"),
-          selectInput("default_dataset", "Pilih Dataset Default:",
+          h4("📊 Dataset Tersedia", style = "margin: 0 0 15px 0; color: #065F46; text-align: center; font-size: 16px;"),
+          selectInput("default_dataset", "Pilih Dataset:",
                       choices = c("SoVI Data" = "sovi", "Distance Data" = "distance"),
                       selected = "sovi"),
-          actionButton("load_default_data", "Muat Dataset Default", 
+          actionButton("load_default_data", "Muat Dataset", 
                        class = "btn-success", style = "width: 100%; margin-bottom: 15px;"),
-          hr(style = "border-color: #10B981; margin: 15px 0;"),
-          h4("📁 Upload Data", style = "margin: 0 0 15px 0; color: #065F46; text-align: center; font-size: 16px;"),
-          fileInput("upload_file", NULL,
-                    placeholder = "Pilih File CSV",
-                    accept = c("text/csv",
-                               "text/comma-separated-values,text/plain",
-                               ".csv")),
-          div(style = "text-align: center;",
-              checkboxInput("header", "File memiliki header", TRUE))
+          div(style = "text-align: center; margin-top: 10px; padding: 10px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;",
+              p("📋 Hanya dataset yang tersedia di sistem yang dapat digunakan", 
+                style = "margin: 0; font-size: 12px; color: #065F46; font-style: italic;"))
       )
     )
   ),
@@ -523,7 +519,7 @@ ui <- dashboardPage(
                 ),
                 box(title = "🚀 Panduan Cepat", status = "primary", solidHeader = TRUE, width = 4,
                     div(style = "padding: 10px;",
-                        p("1️⃣ Pilih dataset default atau upload CSV", style = "margin-bottom: 8px;"),
+                        p("1️⃣ Pilih dataset yang tersedia di sistem", style = "margin-bottom: 8px;"),
                         p("2️⃣ Eksplorasi data di tab Eksplorasi", style = "margin-bottom: 8px;"),
                         p("3️⃣ Jalankan uji asumsi statistik", style = "margin-bottom: 8px;"),
                         p("4️⃣ Lakukan analisis statistik", style = "margin-bottom: 8px;"),
@@ -548,8 +544,8 @@ ui <- dashboardPage(
                 box(title = "💡 Tips Penggunaan", status = "primary", solidHeader = TRUE, width = 6,
                     div(style = "padding: 15px;",
                         div(style = "background: linear-gradient(135deg, #FCE7F3 0%, #D1FAE5 100%); padding: 15px; border-radius: 12px; margin-bottom: 10px;",
-                            strong("✅ Upload Data"), br(),
-                            span("Gunakan file CSV dengan header untuk hasil optimal", style = "color: #6B7280; font-size: 14px;")
+                            strong("🔒 Keamanan Data"), br(),
+                            span("Sistem menggunakan dataset terverifikasi untuk keamanan dan konsistensi", style = "color: #6B7280; font-size: 14px;")
                         ),
                         div(style = "background: linear-gradient(135deg, #FCE7F3 0%, #D1FAE5 100%); padding: 15px; border-radius: 12px; margin-bottom: 10px;",
                             strong("📈 Visualisasi"), br(),
@@ -827,7 +823,7 @@ server <- function(input, output, session) {
     })
   }, once = TRUE) # Hanya dijalankan sekali saat inisialisasi
   
-  # Observer untuk memuat dataset default yang dipilih
+  # Observer untuk memuat dataset yang dipilih
   observeEvent(input$load_default_data, {
     req(input$default_dataset)
     tryCatch({
@@ -836,25 +832,13 @@ server <- function(input, output, session) {
         data_r(df)
         showNotification("Dataset SoVI Data berhasil dimuat!", type = "success")
       } else if (input$default_dataset == "distance") {
-        df <- read.csv("distance.csv")
+        # Membaca distance.csv dengan penanganan khusus karena ukurannya besar
+        df <- read.csv("distance.csv", header = TRUE, stringsAsFactors = FALSE)
         data_r(df)
         showNotification("Dataset Distance Data berhasil dimuat!", type = "success")
       }
     }, error = function(e) {
       showNotification(paste("Error loading dataset:", e$message), type = "error")
-      data_r(NULL) # Reset data jika ada error
-    })
-  })
-  
-  # Observer untuk mengunggah data baru
-  observeEvent(input$upload_file, {
-    req(input$upload_file)
-    tryCatch({
-      df <- read.csv(input$upload_file$datapath, header = input$header)
-      data_r(df)
-      showNotification("Data berhasil diunggah!", type = "success")
-    }, error = function(e) {
-      showNotification(paste("Error membaca file:", e$message), type = "error")
       data_r(NULL) # Reset data jika ada error
     })
   })
