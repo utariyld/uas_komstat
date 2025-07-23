@@ -4,17 +4,17 @@ library(shiny)
 library(shinydashboard)
 library(ggplot2)
 library(dplyr)
-library(psych) # Untuk statistik deskriptif lanjutan
-library(car)   # Untuk uji Levene
-library(DT)    # Untuk tabel interaktif
-library(knitr) # Untuk rendering laporan
-library(rmarkdown) # Untuk rendering laporan
-library(tseries) # Untuk uji Jarque-Bera (normalitas)
-library(lmtest) # Untuk uji Durbin-Watson (autokorelasi)
-library(leaflet) # Untuk visualisasi peta
-library(officer) # Untuk Word document
-library(flextable) # Untuk tabel dalam Word
-library(scales) # Untuk rescaling coordinates
+library(psych) 
+library(car)  
+library(DT)   
+library(knitr)
+library(rmarkdown)
+library(tseries) 
+library(lmtest)
+library(leaflet)
+library(officer)
+library(flextable)
+library(scales)
 library(tinytex)
 library(grid)
 
@@ -454,7 +454,7 @@ ui <- dashboardPage(
   dashboardHeader(title = "✨ NusaAnalytics",
                   titleWidth = 280,
                   tags$li(class = "dropdown",
-                          tags$style(HTML(custom_css)) # Memanggil CSS di sini
+                          tags$style(HTML(custom_css))
                   )),
   dashboardSidebar(
     width = 280, 
@@ -572,7 +572,7 @@ ui <- dashboardPage(
                 ),
                 box(title = "Visualisasi Data", status = "primary", solidHeader = TRUE, width = 6,
                                 selectInput("plot_type", "Pilih Jenis Grafik:",
-                        choices = c("Histogram", "Boxplot", "Scatter Plot", "Bar Plot", "Peta", "Peta Jarak")), # Added Map and Distance Map
+                        choices = c("Histogram", "Boxplot", "Scatter Plot", "Bar Plot", "Peta Jarak")), # Added Map and Distance Map
                     uiOutput("plot_vars_ui"),
                     actionButton("generate_plot", "Buat Grafik", class = "btn-primary"),
                     br(), br(),
@@ -770,57 +770,278 @@ ui <- dashboardPage(
   )
 )
 
-server <- function(input, output, session) {
-  
-  # --- Data Reaktif ---
-  data_r <- reactiveVal(NULL) 
-
-
-  # Memuat data default saat aplikasi dimulai
-  observeEvent(TRUE, {
-    tryCatch({
-      # Load default data (SoVI by default)
-      sovi_data <- read.csv("sovi_data.csv")
-      data_r(sovi_data)
-      showNotification("Data 'sovi_data.csv' dimuat sebagai default.", type = "message")
-    }, error = function(e) {
-      showNotification(paste("Error loading default data (sovi_data.csv):", e$message), type = "error")
-      data_r(NULL)
-    })
-  }, once = TRUE) 
-  
-  # Observer untuk memuat dataset default yang dipilih
-  observeEvent(input$load_default_data, {
-    req(input$default_dataset)
-    tryCatch({
-      if (input$default_dataset == "sovi") {
-        df <- read.csv("sovi_data.csv")
-        data_r(df)
-        showNotification("Dataset SoVI Data berhasil dimuat!", type = "success")
-      } else if (input$default_dataset == "distance") {
-        df <- read.csv("distance.csv")
-        data_r(df)
-        showNotification("Dataset Distance Data berhasil dimuat!", type = "success")
-      }
-    }, error = function(e) {
-      showNotification(paste("Error loading dataset:", e$message), type = "error")
-      data_r(NULL) # Reset data jika ada error
-    })
-  })
-  
-  observe({
-    req(current_data())
-    df <- current_data() 
-    cols <- names(df)
-    numeric_cols <- cols[sapply(df, is.numeric)]
+  server <- function(input, output, session) {
     
-    factor_like_cols <- names(df)[sapply(df, function(x) {
-      is.factor(x) || is.character(x) || 
-        (is.numeric(x) && length(unique(x[!is.na(x)])) <= 10)
-    })]
-
-    cat_vars_from_management <- names(df)[grepl("_cat$", names(df))]
-    factor_like_cols <- unique(c(factor_like_cols, cat_vars_from_management))
+    # --- Data Reaktif ---
+    data_r <- reactiveVal(NULL) # Untuk menyimpan data yang aktif (awal atau upload)
+    
+    # Load distance data globally
+    distance_data <- reactive({
+      tryCatch({
+        dist_df <- read.csv("distance.csv", row.names = 1)
+        return(dist_df)
+      }, error = function(e) {
+        showNotification(paste("Error loading distance data:", e$message), type = "error")
+        return(NULL)
+      })
+    })
+    
+    # Function to convert distance matrix to coordinates using MDS
+    distance_to_coordinates <- function(dist_matrix, dimensions = 2) {
+      # Ensure the matrix is symmetric and has no negative values
+      dist_matrix[is.na(dist_matrix)] <- 0
+      
+      # Convert to distance object
+      if (!inherits(dist_matrix, "dist")) {
+        dist_matrix <- as.dist(dist_matrix)
+      }
+      
+      # Apply classical multidimensional scaling
+      mds_result <- cmdscale(dist_matrix, k = dimensions, eig = TRUE)
+      
+      # Extract coordinates
+      coordinates <- as.data.frame(mds_result$points)
+      colnames(coordinates) <- c("longitude", "latitude")
+      
+      # Add district codes as row names
+      coordinates$district_id <- as.numeric(rownames(coordinates))
+      
+      # Scale coordinates to a reasonable geographic range
+      # Normalize to approximately fit Indonesian archipelago bounds
+      coordinates$longitude <- scales::rescale(coordinates$longitude, to = c(95, 141))
+      coordinates$latitude <- scales::rescale(coordinates$latitude, to = c(-11, 6))
+      
+      return(coordinates)
+    }
+    
+    # --- Fungsi untuk membuat bobot spasial ---
+    create_spatial_weights <- function(distance_matrix, method = "gaussian", bandwidth = NULL) {
+      if (!inherits(distance_matrix, "matrix")) {
+        distance_matrix <- as.matrix(distance_matrix)
+      }
+      
+      n <- nrow(distance_matrix)
+      W <- matrix(0, nrow = n, ncol = n)
+      
+      if (method == "gaussian") {
+        if (is.null(bandwidth)) {
+          # Estimate bandwidth if not provided (e.g., median of non-zero distances)
+          non_zero_distances <- distance_matrix[distance_matrix > 0]
+          if (length(non_zero_distances) > 0) {
+            bandwidth <- median(non_zero_distances) / 2 # Heuristic
+          } else {
+            stop("Bandwidth must be provided or derivable for Gaussian method.")
+          }
+        }
+        for (i in 1:n) {
+          for (j in 1:n) {
+            if (i != j) {
+              W[i, j] <- exp(-0.5 * (distance_matrix[i, j]^2) / (bandwidth^2))
+            }
+          }
+        }
+      } else if (method == "fixed_distance") {
+        if (is.null(bandwidth)) {
+          stop("Bandwidth (fixed distance threshold) must be provided for fixed_distance method.")
+        }
+        for (i in 1:n) {
+          for (j in 1:n) {
+            if (i != j && distance_matrix[i, j] <= bandwidth) {
+              W[i, j] <- 1
+            }
+          }
+        }
+      } else {
+        stop("Metode bobot spasial tidak dikenal. Pilih 'gaussian' atau 'fixed_distance'.")
+      }
+      
+      # Normalisasi baris (row-standardization)
+      row_sums <- rowSums(W)
+      W <- W / ifelse(row_sums == 0, 1, row_sums) # Hindari pembagian dengan nol
+      
+      return(W)
+    }
+    
+    # Implementasi FGWC
+    fgwc_clustering <- function(data, distance_matrix, k = 3, m = 2, max_iter = 100, tolerance = 1e-4, 
+                                spatial_method = "gaussian", bandwidth = NULL, lambda = 0.5) {
+      n <- nrow(data)
+      p <- ncol(data)
+      
+      # Initialize membership matrix U
+      set.seed(123)
+      U <- matrix(runif(n * k), nrow = n, ncol = k)
+      U <- U / rowSums(U)  # Normalize
+      
+      # Initialize cluster centers V
+      V <- matrix(0, nrow = k, ncol = p)
+      
+      # Create spatial weights
+      W <- create_spatial_weights(distance_matrix, method = spatial_method, bandwidth = bandwidth)
+      
+      # If no spatial weights, use identity
+      if(is.null(W) || all(W == 0)) { # Perbaikan: cek juga jika semua bobot 0
+        W <- diag(n)
+        lambda <- 0  # No spatial penalty
+        cat("No effective spatial weights available, using standard fuzzy c-means\n")
+      }
+      
+      # FGWC iterations
+      for(iter in 1:max_iter) {
+        U_old <- U
+        
+        # Update cluster centers V
+        for(i in 1:k) {
+          numerator <- colSums((U[, i]^m) * data)
+          denominator <- sum(U[, i]^m)
+          if(denominator > 0) {
+            V[i, ] <- numerator / denominator
+          } else {
+            V[i, ] <- colMeans(data)  # Fallback
+          }
+        }
+        
+        # Update membership matrix U with spatial constraint
+        for(i in 1:n) {
+          distances <- numeric(k)
+          
+          for(j in 1:k) {
+            # Feature space distance
+            feature_dist <- sqrt(sum((data[i, ] - V[j, ])^2))
+            
+            # Spatial constraint: weighted average of neighbors' membership to cluster j
+            if(lambda > 0 && !is.null(W) && !all(W[i, ] == 0)) { # Pastikan ada bobot spasial untuk baris ini
+              spatial_constraint <- sum(W[i, ] * U[, j])
+              # Combine feature distance with spatial constraint
+              distances[j] <- feature_dist * (1 + lambda * (1 - spatial_constraint))
+            } else {
+              distances[j] <- feature_dist
+            }
+          }
+          
+          # Update membership values
+          for(j in 1:k) {
+            if(distances[j] == 0) {
+              U[i, ] <- 0
+              U[i, j] <- 1
+              break
+            } else {
+              sum_term <- sum((distances[j] / distances)^(2/(m-1)))
+              if(is.finite(sum_term) && sum_term > 0) {
+                U[i, j] <- 1 / sum_term
+              } else {
+                U[i, j] <- 1 / k  # Fallback
+              }
+            }
+          }
+          
+          # Normalize membership (ensure sum = 1)
+          row_sum <- sum(U[i, ])
+          if(row_sum > 0) {
+            U[i, ] <- U[i, ] / row_sum
+          } else {
+            U[i, ] <- rep(1/k, k)  # Equal membership if all zero
+          }
+        }
+        
+        # Check convergence
+        if(sum((U - U_old)^2) < tolerance) {
+          cat("FGWC converged after", iter, "iterations\n")
+          break
+        }
+      }
+      
+      # Get hard cluster assignments
+      clusters <- apply(U, 1, which.max)
+      
+      # Calculate objective function value (optional)
+      obj_value <- 0
+      for(i in 1:n) {
+        for(j in 1:k) {
+          feature_dist <- sum((data[i, ] - V[j, ])^2)
+          if(lambda > 0 && !is.null(W) && !all(W[i, ] == 0)) { # Pastikan ada bobot spasial untuk baris ini
+            spatial_penalty <- lambda * sum(W[i, ] * (U[, j] - U[i, j])^2)
+            obj_value <- obj_value + (U[i, j]^m) * (feature_dist + spatial_penalty)
+          } else {
+            obj_value <- obj_value + (U[i, j]^m) * feature_dist
+          }
+        }
+      }
+      
+      return(list(
+        clusters = clusters,
+        centers = V,
+        membership = U,
+        iterations = iter,
+        objective = obj_value,
+        spatial_lambda = lambda,
+        spatial_method = spatial_method,
+        bandwidth = bandwidth
+      ))
+    }
+    
+    
+    # Memuat data default saat aplikasi dimulai
+    observeEvent(TRUE, {
+      tryCatch({
+        # Load default data (SoVI by default)
+        sovi_data <- read.csv("sovi_data.csv")
+        data_r(sovi_data)
+        showNotification("Data 'sovi_data.csv' dimuat sebagai default.", type = "message")
+      }, error = function(e) {
+        showNotification(paste("Error loading default data (sovi_data.csv):", e$message), type = "error")
+        data_r(NULL) # Reset data jika ada error
+      })
+    }, once = TRUE) # Hanya dijalankan sekali saat inisialisasi
+    
+    # Observer untuk memuat dataset default yang dipilih
+    observeEvent(input$load_default_data, {
+      req(input$default_dataset)
+      tryCatch({
+        if (input$default_dataset == "sovi") {
+          df <- read.csv("sovi_data.csv")
+          data_r(df)
+          showNotification("Dataset SoVI Data berhasil dimuat!", type = "success")
+        } else if (input$default_dataset == "distance") {
+          df <- read.csv("distance.csv")
+          data_r(df)
+          showNotification("Dataset Distance Data berhasil dimuat!", type = "success")
+        }
+      }, error = function(e) {
+        showNotification(paste("Error loading dataset:", e$message), type = "error")
+        data_r(NULL) # Reset data jika ada error
+      })
+    })
+    
+    # Observer untuk mengunggah data baru
+    observeEvent(input$upload_file, {
+      req(input$upload_file)
+      tryCatch({
+        df <- read.csv(input$upload_file$datapath, header = input$header)
+        data_r(df)
+        showNotification("Data berhasil diunggah!", type = "success")
+      }, error = function(e) {
+        showNotification(paste("Error membaca file:", e$message), type = "error")
+        data_r(NULL) # Reset data jika ada error
+      })
+    })
+    
+    # --- UI Dinamis untuk Pemilihan Variabel ---
+    # Ini akan diperbarui setiap kali data_r() berubah (data diunggah atau dimanipulasi)
+    observe({
+      req(current_data()) # Pastikan ada data sebelum membuat UI dinamis
+      df <- current_data() # Menggunakan current_data() untuk mendapatkan data terbaru
+      cols <- names(df)
+      numeric_cols <- cols[sapply(df, is.numeric)]
+      
+      # Dapatkan variabel yang bisa dijadikan faktor (termasuk variabel kategorik hasil kategorisasi)
+      factor_like_cols <- names(df)[sapply(df, function(x) {
+        is.factor(x) || is.character(x) || 
+          (is.numeric(x) && length(unique(x[!is.na(x)])) <= 10) # Numerik dengan sedikit unique values
+      })]
+      # Tambahkan variabel kategorik yang dibuat dari kategorisasi (yang berakhiran "_cat")
+      cat_vars_from_management <- names(df)[grepl("_cat$", names(df))]
+      factor_like_cols <- unique(c(factor_like_cols, cat_vars_from_management))
 
     # Manajemen Data
     output$var_categorize_ui <- renderUI({
